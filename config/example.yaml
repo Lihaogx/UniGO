@@ -1,0 +1,52 @@
+result_dir: results
+ckpt_dir: ckpt
+logger_dir: logger
+num_threads: 24
+seed: 1234
+num_workers: 8
+repeat: 5
+run_multiple_splits: []
+data:
+  file_path_train: null
+  file_path_test: null
+  size: 2000
+  task_type: 1
+  name: degroot
+  split:
+    - 0.7
+    - 0.1
+    - 0.2
+  batch_size: 30
+  train_timestep: 1
+train:
+  gpus:
+    - 0
+  pretrained_ckpt: null
+  accelerator: gpu
+  max_epochs: 1000
+  min_epochs: 50
+  monitor: val_wasserstein_distance
+optim:
+  lr: 0.01
+  max_epoch: 1000
+  weight_decay: 0.0001
+  optimizer: adamw
+  lr_scheduler: true
+  scheduler: step
+  steps: 100
+model:
+  network_type: mogo
+  layer_type: gcn
+  loss_type: mse
+  gamma: 0.5
+  in_dim: 1
+  hidden_dim: 8
+  layers: 2
+  order: 2
+  dropout: 0.0
+  combine_mode: mean
+  force_layer: 8
+  num_class: 4
+  m: 0.5
+  num_node: 2000
+  cluster_type: 0.01

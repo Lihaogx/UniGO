@@ -1,0 +1,32 @@
+Seed set to 1234
+Traceback (most recent call last):
+  File "/home/lh/miniconda3/envs/mogo/lib/python3.9/site-packages/torch/serialization.py", line 541, in _check_seekable
+    f.seek(f.tell())
+AttributeError: 'NoneType' object has no attribute 'seek'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/lh/MOGO/main.py", line 210, in <module>
+    main(args)
+  File "/home/lh/MOGO/main.py", line 125, in main
+    model_module = MInterface.load_from_checkpoint(checkpoint_path=initial_ckpt_path, model_config=args.model, optim_config=args.optim)
+  File "/home/lh/miniconda3/envs/mogo/lib/python3.9/site-packages/pytorch_lightning/utilities/model_helpers.py", line 125, in wrapper
+    return self.method(cls, *args, **kwargs)
+  File "/home/lh/miniconda3/envs/mogo/lib/python3.9/site-packages/pytorch_lightning/core/module.py", line 1581, in load_from_checkpoint
+    loaded = _load_from_checkpoint(
+  File "/home/lh/miniconda3/envs/mogo/lib/python3.9/site-packages/pytorch_lightning/core/saving.py", line 63, in _load_from_checkpoint
+    checkpoint = pl_load(checkpoint_path, map_location=map_location)
+  File "/home/lh/miniconda3/envs/mogo/lib/python3.9/site-packages/lightning_fabric/utilities/cloud_io.py", line 46, in _load
+    return torch.load(
+  File "/home/lh/miniconda3/envs/mogo/lib/python3.9/site-packages/torch/serialization.py", line 998, in load
+    with _open_file_like(f, 'rb') as opened_file:
+  File "/home/lh/miniconda3/envs/mogo/lib/python3.9/site-packages/torch/serialization.py", line 450, in _open_file_like
+    return _open_buffer_reader(name_or_buffer)
+  File "/home/lh/miniconda3/envs/mogo/lib/python3.9/site-packages/torch/serialization.py", line 435, in __init__
+    _check_seekable(buffer)
+  File "/home/lh/miniconda3/envs/mogo/lib/python3.9/site-packages/torch/serialization.py", line 544, in _check_seekable
+    raise_err_msg(["seek", "tell"], e)
+  File "/home/lh/miniconda3/envs/mogo/lib/python3.9/site-packages/torch/serialization.py", line 537, in raise_err_msg
+    raise type(e)(msg)
+AttributeError: 'NoneType' object has no attribute 'seek'. You can only torch.load from a file that is seekable. Please pre-load the data into a buffer like io.BytesIO and try to load from it instead.
