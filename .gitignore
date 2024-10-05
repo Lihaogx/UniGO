@@ -16,3 +16,5 @@ ckpt/
 /data/processed_data_batch_7.pkl
 /data/processed_data_batch_8.pkl
 /data/synthetic.h5
+nni_pids.txt
+nohup.out
