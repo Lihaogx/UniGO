@@ -3,4 +3,16 @@ results/
 logger/
 ckpt/
 .vscode/
-/data
+/data/raw_data
+/data/real_data
+/data/synthetic_data
+/data/synthetic_filtered.h5
+/data/processed_data_batch_1.pkl
+/data/processed_data_batch_2.pkl
+/data/processed_data_batch_3.pkl
+/data/processed_data_batch_4.pkl
+/data/processed_data_batch_5.pkl
+/data/processed_data_batch_6.pkl
+/data/processed_data_batch_7.pkl
+/data/processed_data_batch_8.pkl
+/data/synthetic.h5

@@ -1,0 +1,8 @@
+{
+      "pool_ratio": {"_type": "choice", "_value": [0.1, 0.2, 0.3, 0.5]},
+      "dt": {"_type": "choice", "_value": [0.05, 0.1, 0.2, 0.3, 0.5]},
+      "lr": {"_type": "loguniform", "_value": [1e-5, 1e-2]},
+      "hid_dim": {"_type": "choice", "_value": [8, 16, 32]},
+      "pool_type": {"_type": "choice", "_value": ["sag", "topk", "asa"]}
+    }
+    

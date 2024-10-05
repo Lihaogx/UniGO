@@ -1,0 +1,29 @@
+# 网络参数
+n: 1000  # 节点数
+graph_type: 'ba'  # 图类型: 'ba', 'er', 'ws', 'regular', 或 'real'
+m: 3  # BA模型的m参数
+p: 0.01  # ER模型的p参数或WS模型的重连概率
+k: 4  # WS模型的邻居数
+
+# 模拟参数
+num_graphs: 5  # 要生成的图的数量
+od_model: ['fj', 'hk']  # 观点动力学模型: 'degroot', 'fj', 'hk', 'hk_hetero', 'hk_noise', 'dw', 或 'community'
+iteration: 100  # 迭代次数
+
+# 模型特定参数
+epsilon: 0.2  # HK模型的置信阈值
+mu: 0.5  # FJ模型的影响因子
+p_noise: 0.1  # 噪声模型的噪声概率
+confidence_range: [0.1, 0.3]  # 异质性HK模型的置信区间
+
+# 初始观点设置
+random_initial_opinion: true  # 是否随机生成初始观点
+initial_opinions: null  # 如果不随机生成,可以在这里提供初始观点数组
+
+# 真实网络设置
+use_real_network: false  # 是否使用真实网络
+real_network_path: null  # 真实网络文件的路径
+
+# 时间窗口参数
+lookback: 10  # x的时间步长度
+horizon: 5  # y的时间步长度

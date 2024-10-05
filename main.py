@@ -11,6 +11,7 @@ from model.model_interface import MInterface
 from data.data_interface import DInterface
 from omegaconf import OmegaConf
 from utils import set_file_paths, add_test_phase_separator, load_config, save_all_results_to_csv, TimingCallback
+import nni
 
 def load_loggers(logger_dir, current_time_str, seed, run_id):
     loggers = [
@@ -19,21 +20,24 @@ def load_loggers(logger_dir, current_time_str, seed, run_id):
     ]
     return loggers
 
-def load_callbacks(ckpt_dir, current_time_str, seed, run_id, task_type, size, name):
-    ckpt_path = f"{ckpt_dir}/{name}_{size}_{current_time_str}_{seed}_{run_id}"
+import os
+import pytorch_lightning.callbacks as plc
+
+def load_callbacks(ckpt_dir, current_time_str, seed, run_id, type, name):
+    ckpt_path = f"{ckpt_dir}/{name}_{type}_{current_time_str}_{seed}_{run_id}"
     if not os.path.exists(ckpt_path):
         os.makedirs(ckpt_path)
     callbacks = [
         plc.EarlyStopping(
-            monitor='val_accuracy',
-            mode='max',
+            monitor='val_wasserstein_distance',
+            mode='min',
             patience=50,
             min_delta=0.001
         ),
         plc.ModelCheckpoint(
             monitor='val_wasserstein_distance',
             dirpath=ckpt_path,
-            filename='best-{epoch:02d}-{val_wasserstein_distance:.3f}',
+            filename='best-wd-{epoch:02d}-{val_wasserstein_distance:.3f}',
             save_top_k=1,
             mode='min',
             save_last=True
@@ -41,41 +45,16 @@ def load_callbacks(ckpt_dir, current_time_str, seed, run_id, task_type, size, na
         plc.ModelCheckpoint(
             monitor='val_mse',
             dirpath=ckpt_path,
-            filename='best-{epoch:02d}-{val_mse:.3f}',
-            save_top_k=1,
-            mode='min',
-            save_last=True
-        ),
-        plc.ModelCheckpoint(
-            monitor='val_accuracy',
-            dirpath=ckpt_path,
-            filename='best-{epoch:02d}-{val_accuracy:.3f}',
-            save_top_k=1,
-            mode='max',
-            save_last=True
-        ),
-        plc.ModelCheckpoint(
-            monitor='val_f1',
-            dirpath=ckpt_path,
-            filename='best-{epoch:02d}-{val_accuracy:.3f}',
-            save_top_k=1,
-            mode='max',
-            save_last=True
-        ),
-        plc.ModelCheckpoint(
-            monitor='val_dtw',
-            dirpath=ckpt_path,
-            filename='best-{epoch:02d}-{val_accuracy:.3f}',
+            filename='best-mse-{epoch:02d}-{val_mse:.3f}',
             save_top_k=1,
             mode='min',
             save_last=True
         ),
         TimingCallback()
     ]
-    if task_type == 3:  # Assuming task 3 requires learning rate adjustments
-        callbacks.append(plc.LearningRateMonitor(logging_interval='epoch'))
 
     return callbacks
+
 
 def run_loop_settings(args):
     """Create main loop execution settings based on the current cfg.
@@ -106,97 +85,128 @@ def run_loop_settings(args):
     return run_ids, seeds
 
 
+
 def main(args):
+    
+    params = nni.get_next_parameter()
+    args.optim.lr = params.get('lr', args.optim.lr)
+    args.model.ag_hid_dim = params.get('hid_dim', args.model.ag_hid_dim)
+    args.model.ode_hid_dim = params.get('hid_dim', args.model.ode_hid_dim)
+    args.model.sr_hid_dim = params.get('hid_dim', args.model.sr_hid_dim)
+    if args.model_type == 'gnn':
+        args.model.gnn_type = params.get('gnn_type', args.model.gnn_type)
+        args.model.num_layers = params.get('num_layers', args.model.num_layers)
+        
+    elif args.model_type == 'mogo':
+        args.model.pool_ratio = params.get('pool_ratio', args.model.pool_ratio)
+        args.model.dt = params.get('dt', args.model.dt)
+        args.model.pool_type = params.get('pool_type', args.model.pool_type)
+    
+    
     pl.seed_everything(args.seed)
     torch.set_num_threads(args.num_threads)
     torch.set_default_dtype(torch.float32)
     all_results = []
-    pre_results = []
+
     for run_id, seed in zip(*run_loop_settings(args)):
         current_time_str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
         loggers = load_loggers(args.logger_dir, current_time_str, seed, run_id)
-        callbacks = load_callbacks(args.ckpt_dir, current_time_str, seed, run_id, args.data.task_type, args.data.size, args.data.name)
+        callbacks = load_callbacks(
+            args.ckpt_dir, current_time_str, seed, run_id,
+            args.data.task_type, args.data.name
+        )
         initial_ckpt_path = args.train.pretrained_ckpt
         
         data_module = DInterface(data_config=args.data)
-        if args.data.task_type in [2,3]:
-            model_module = MInterface.load_from_checkpoint(checkpoint_path=initial_ckpt_path, model_config=args.model, optim_config=args.optim)
-        elif args.data.task_type == 1:
-            model_module = MInterface(model_config=args.model, optim_config=args.optim)
         
-        if args.data.task_type in [2,3]:
-            args.train.max_epochs = 200
-            args.train.min_epochs = 100
+        if args.data.task_type == 'pre-training':
+            # 初始化模型，不加载预训练的检查点
+            model_module = MInterface(args)
+            
+            # 设置训练参数
             trainer = Trainer(
                 callbacks=callbacks, 
                 logger=loggers, 
                 max_epochs=args.train.max_epochs, 
                 min_epochs=args.train.min_epochs, 
                 accelerator=args.train.accelerator, 
-                devices=args.train.gpus if args.train.gpus else None, 
+                devices=args.train.devices, 
+                strategy=args.train.strategy, 
                 enable_checkpointing=True,
             )
-            data_module.setup()
-            pre_result = trainer.test(model=model_module, datamodule=data_module)
-            for result in pre_result:
+
+            # 训练模型
+            trainer.fit(model_module, datamodule=data_module)
+
+            # 确定用于测试的最佳检查点
+            if args.train.monitor == 'val_wasserstein_distance':
+                best_checkpoint_path = callbacks[1].best_model_path
+            elif args.train.monitor == 'val_mse':
+                best_checkpoint_path = callbacks[2].best_model_path
+            else:
+                raise ValueError("Unsupported monitoring target specified.")
+
+            # 加载最佳模型检查点进行测试
+            model_module = MInterface.load_from_checkpoint(
+                checkpoint_path=best_checkpoint_path,
+                args=args)
+
+            # 测试模型
+            test_results = trainer.test(model=model_module, datamodule=data_module)
+            
+            for result in test_results:
                 result_entry = {
                     "run_id": run_id,
                     "seed": seed,
                     "current_time": current_time_str,
-                    "best_checkpoint_path": None
+                    "best_checkpoint_path": best_checkpoint_path
                 }
                 result_entry.update(result)
-                pre_results.append(result_entry)
-            pre_result_file = f'{args.result_dir}/{args.data.task_type}/{args.model.layer_type}/pre_{args.data.name}_{args.model.layers}_{args.model.order}_{args.model.cluster_type}.csv'
-            save_all_results_to_csv(pre_results, pre_result_file)
-            
-        trainer = Trainer(
-            callbacks=callbacks, 
-            logger=loggers, 
-            max_epochs=args.train.max_epochs, 
-            min_epochs=args.train.min_epochs, 
-            accelerator=args.train.accelerator, 
-            devices=args.train.gpus if args.train.gpus else None, 
-            enable_checkpointing=True,
-        )
-
-        # Fit model
-        trainer.fit(model_module, datamodule=data_module)
-
-        # Determine the correct checkpoint for testing based on the monitoring target
-        if args.train.monitor == 'val_wasserstein_distance':
-            best_checkpoint_path = callbacks[1].best_model_path
-        elif args.train.monitor == 'val_mse':
-            best_checkpoint_path = callbacks[2].best_model_path
-        elif args.train.monitor == 'val_accuracy':
-            best_checkpoint_path = callbacks[3].best_model_path
-        elif args.train.monitor == 'val_f1':
-            best_checkpoint_path = callbacks[4].best_model_path
-        elif args.train.monitor == 'val_dtw':
-            best_checkpoint_path = callbacks[5].best_model_path
-        else:
-            raise ValueError("Unsupported monitoring target specified.")
-        # Test using the best model after fitting
-        test_results = trainer.test(model=model_module, datamodule=data_module)
+                all_results.append(result_entry)
+            nni.report_final_result(trainer.callback_metrics["test_mse"].item())
+            # nni.report_final_result(trainer.callback_metrics["test_wasserstein_distance"].item())
+            # 保存结果
+            result_file = f'{args.result_dir}/{args.data.task_type}/{args.data.name}_{args.model.pool_type}/{current_time_str}.csv'
+            save_all_results_to_csv(all_results, result_file)
         
-        for result in test_results:
-            result_entry = {
-                "run_id": run_id,
-                "seed": seed,
-                "current_time": current_time_str,
-                "best_checkpoint_path": best_checkpoint_path
-            }
-            result_entry.update(result)
-            all_results.append(result_entry)
-    if args.data.task_type == 1:
-        if args.model.network_type == 'single':
-            result_file = f'{args.result_dir}/{args.data.task_type}/{args.model.network_type}/{args.data.size}/{args.model.layer_type}/{args.data.name}_{args.model.force_layer}.csv'
-        elif args.model.network_type == 'mogo':
-            result_file = f'{args.result_dir}/{args.data.task_type}/{args.model.network_type}/{args.data.size}/{args.model.layer_type}/{args.data.name}_{args.model.layers}_{args.model.order}_{args.model.cluster_type}.csv'
-    elif args.data.task_type in [2,3]:
-        result_file = f'{args.result_dir}/{args.data.task_type}/{args.model.layer_type}/fine_{args.data.name}_{args.model.layers}_{args.model.order}_{args.model.cluster_type}.csv'
-    save_all_results_to_csv(all_results, result_file)
-
+        elif args.data.task_type == 'real-data-testing':
+            # 从预训练的检查点加载模型
+            model_module = MInterface.load_from_checkpoint(
+                checkpoint_path=initial_ckpt_path,
+                model_config=args.model,
+                optim_config=args.optim
+            )
+            
+            # 设置测试参数
+            trainer = Trainer(
+                callbacks=callbacks, 
+                logger=loggers, 
+                accelerator=args.train.accelerator, 
+                devices=args.train.devices, 
+                strategy=args.train.strategy,
+                enable_checkpointing=False,
+            )
+            data_module.setup()
+            # 测试模型
+            test_results = trainer.test(model=model_module, datamodule=data_module)
+            
+            for result in test_results:
+                result_entry = {
+                    "run_id": run_id,
+                    "seed": seed,
+                    "current_time": current_time_str,
+                    "best_checkpoint_path": initial_ckpt_path
+                }
+                result_entry.update(result)
+                all_results.append(result_entry)
+                
+            nni.report_final_result(trainer.callback_metrics["val_mse"].item())
+            # 保存测试结果
+            result_file = f'{args.result_dir}/{args.data.task_type}/{args.model.layer_type}/test_{args.data.name}_{args.model.layers}_{args.model.order}_{args.model.cluster_type}.csv'
+            save_all_results_to_csv(all_results, result_file)
+        
+        else:
+            raise ValueError(f"未知的 task_type：{args.data.task_type}")
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Process some integers.')
     parser.add_argument('--config', type=str, required=True,

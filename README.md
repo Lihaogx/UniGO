@@ -1,6 +1,6 @@
-# MOGO
+# UniGO
 
-Implementation for the paper "MOGO: A Multi-Order Graph Neural Network for Learning Opinion Dynamics on Graphs."
+Implementation for the paper "UniGO: A Multi-Order Graph Neural Network for Learning Opinion Dynamics on Graphs."
 
 ## Requirements
 
@@ -17,7 +17,7 @@ Please note that `torch_cluster`, `torch_scatter`, and `torch_sparse` required b
 This project provides a method for generating synthetic data. The command to run it is:
 
 ```
-python ./MOGO/data/synthetic_data/od_synthetic_data_generate.py --config ./MOGO/data/data_config/large_degroot.yaml
+python ./UniGO/data/synthetic_data/od_synthetic_data_generate.py --config ./UniGO/data/data_config/large_degroot.yaml
 ```
 
 ## Running Our Example
@@ -25,7 +25,7 @@ python ./MOGO/data/synthetic_data/od_synthetic_data_generate.py --config ./MOGO/
 You can modify the config file to run the model example:
 
 ```
-python main.py --config ./MOGO/config/example.yaml
+python main.py --config ./UniGO/config/example.yaml
 ```
 
 The parameters are explained as follows:
