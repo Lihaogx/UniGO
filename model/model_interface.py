@@ -24,8 +24,9 @@ sys.path.append('/home/lh/UniGO/')
 from utils import create_optimizer, create_scheduler
 from model.network.gnn import FlexibleGNN
 from model.network.unigo import UniGONet
+from model.network.unigo_gnn import UniGONet_GNN
 from model.metric.ODMetrics import ODMetrics
-model = {'gnn':FlexibleGNN, 'unigo':UniGONet}
+model = {'gnn':FlexibleGNN, 'unigo':UniGONet, 'unigo_gnn':UniGONet_GNN}
 
 
 class MInterface(pl.LightningModule):

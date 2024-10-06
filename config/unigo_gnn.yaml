@@ -6,7 +6,7 @@ seed: 1234
 num_workers: 16
 repeat: 1
 run_multiple_splits: []
-model_type: unigo
+model_type: unigo_gnn
 data:
   file_path_train: /home/lh/UniGO/data/synthetic_filtered.h5
   file_path_test: null

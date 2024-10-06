@@ -97,10 +97,15 @@ def main(args):
         args.model.gnn_type = params.get('gnn_type', args.model.gnn_type)
         args.model.num_layers = params.get('num_layers', args.model.num_layers)
         
-    elif args.model_type == 'mogo':
+    elif args.model_type == 'unigo':
         args.model.pool_ratio = params.get('pool_ratio', args.model.pool_ratio)
         args.model.dt = params.get('dt', args.model.dt)
         args.model.pool_type = params.get('pool_type', args.model.pool_type)
+    elif args.model_type == 'unigo_gnn':
+        args.model.pool_ratio = params.get('pool_ratio', args.model.pool_ratio)
+        args.model.pool_type = params.get('pool_type', args.model.pool_type)
+        args.model.gnn_type = params.get('gnn_type', args.model.gnn_type)
+        args.model.num_layers = params.get('num_layers', args.model.num_layers)
     
     
     pl.seed_everything(args.seed)

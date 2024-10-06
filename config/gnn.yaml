@@ -8,7 +8,7 @@ repeat: 1
 run_multiple_splits: []
 model_type: gnn
 data:
-  file_path_train: /home/lh/UniGO/data/synthetic_dataset.h5
+  file_path_train: /home/lh/UniGO/data/synthetic_filtered.h5
   file_path_test: null
   task_type: pre-training
   split:
@@ -16,8 +16,8 @@ data:
     - 0.1
     - 0.2
   batch_size: 10
-  ratio: 0.02
-  name: syn
+  ratio: 1
+  name: syn_filtered
 train:
   gpus:
     - 0

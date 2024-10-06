@@ -25,7 +25,7 @@ class Graph_OD_dataset(Dataset):
         self.load_data()
 
     def load_data(self):
-        if 'synthetic_data' in self.file_path:
+        if 'synthetic' in self.file_path:
             random.seed(1234)
             print("load dataset...")
             with h5py.File(self.file_path, 'r') as f:

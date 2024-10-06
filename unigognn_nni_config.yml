@@ -1,10 +1,10 @@
-experimentName: mogo_nni
+experimentName: unigognn_nni
 trialConcurrency: 4  # 根据您的GPU数量设置
 maxExperimentDuration: 96h
 maxTrialNumber: 200
 # maxTrialNumPerGpu: 1
-searchSpaceFile: mogo_search_space.json
-trialCommand: python main.py --config config/mogo.yaml
+searchSpaceFile: unigognn_search_space.json
+trialCommand: python main.py --config config/unigo_gnn.yaml
 trialCodeDirectory: .
 trialGpuNumber: 1  # 每个试验只使用1张GPU
 tuner:
