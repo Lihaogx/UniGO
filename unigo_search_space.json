@@ -9,6 +9,7 @@
       "rg": {"_type": "loguniform", "_value": [0,1]},
       "onehot": {"_type": "loguniform", "_value": [0, 1]},
       "uniform": {"_type": "loguniform", "_value": [0, 1]},
-      "refine_loss": {"_type": "loguniform", "_value": [0, 1]}
+      "refine_loss": {"_type": "loguniform", "_value": [0, 1]},
+      "dropout": {"_type": "loguniform", "_value": [0, 0.5]}
     }
     

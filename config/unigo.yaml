@@ -54,3 +54,4 @@ model:
   onehot: 1
   uniform: 1
   refine_loss: 1
+  dropout: 0.1

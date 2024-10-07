@@ -107,6 +107,7 @@ def main(args):
         args.model.onehot = params.get('onehot', args.model.onehot)
         args.model.uniform = params.get('uniform', args.model.uniform)
         args.model.refine_loss = params.get('refine_loss', args.model.refine_loss)
+        args.model.dropout = params.get('dropout', args.model.dropout)
     elif args.model_type == 'unigo_gnn':
         args.model.pool_ratio = params.get('pool_ratio', args.model.pool_ratio)
         args.model.pool_type = params.get('pool_type', args.model.pool_type)

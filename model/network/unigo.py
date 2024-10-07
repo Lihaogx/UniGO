@@ -17,26 +17,29 @@ def normalized_laplacian(A: torch.Tensor):
 
 
 class Refiner(nn.Module):
-    def __init__(self, lookback, horizon, feature_dim, hid_dim):
+    def __init__(self, lookback, horizon, feature_dim, hid_dim, dropout):
         super(Refiner, self).__init__()
         self.feature_dim = feature_dim
         self.lookback = lookback
         self.horizon = horizon
-        
+        self.dropout = dropout
         # 处理 X 的 MLP
         self.mlp_X = nn.Sequential(
             nn.Linear(lookback * feature_dim, hid_dim),
             nn.Tanh(),
+            nn.Dropout(dropout)
         )
         # 处理 Y 的 MLP
         self.mlp_Y = nn.Sequential(
             nn.Linear(horizon * feature_dim, hid_dim),
             nn.Tanh(),
+            nn.Dropout(dropout)
         )
         # 输出的 MLP
         self.mlp_out = nn.Sequential(
             nn.Linear(hid_dim * 2, hid_dim),
             nn.Tanh(),
+            nn.Dropout(dropout),
             nn.Linear(hid_dim, horizon * feature_dim),
             nn.Sigmoid()
         )
@@ -98,7 +101,7 @@ class GNN(nn.Module):
     
 class BackboneODE(nn.Module):
     """微分方程模型 dX/dt = f(X) + g(X, A)"""
-    def __init__(self, lookback, feature_dim, ode_hid_dim, method):
+    def __init__(self, lookback, feature_dim, ode_hid_dim, method, dropout):
         super(BackboneODE, self).__init__()
         
         self.method = method
@@ -108,6 +111,7 @@ class BackboneODE(nn.Module):
         self.init_enc = nn.Sequential(
             nn.Linear(lookback, ode_hid_dim, bias=True), 
             nn.ReLU(),
+            nn.Dropout(dropout),
             nn.Linear(ode_hid_dim, 1, bias=True)
         )
         
@@ -115,6 +119,7 @@ class BackboneODE(nn.Module):
         self.f = nn.Sequential(
             nn.Linear(feature_dim, ode_hid_dim, bias=True),
             nn.ReLU(),
+            nn.Dropout(dropout),
             nn.Linear(ode_hid_dim, feature_dim, bias=True),
         )
         
@@ -201,6 +206,7 @@ class UniGONet(nn.Module):
         self.onehot = self.model_args.onehot
         self.uniform = self.model_args.uniform
         self.refine_loss = self.model_args.refine_loss
+        self.dropout = self.model_args.dropout
         start_t = (self.lookback) * self.dt
         end_t = (self.lookback + self.horizon - 1) * self.dt
         self.tspan = torch.linspace(start_t, end_t, self.horizon)
@@ -228,6 +234,7 @@ class UniGONet(nn.Module):
         self.repr_net_x = nn.Sequential(
             nn.Linear(self.feature_dim, self.ag_hid_dim),
             nn.Tanh(),
+            nn.Dropout(self.dropout),
             nn.Linear(self.ag_hid_dim, self.ag_hid_dim),
             nn.ReLU(),
             nn.LayerNorm(self.ag_hid_dim),
@@ -235,6 +242,7 @@ class UniGONet(nn.Module):
         self.repr_net_super = nn.Sequential(
             nn.Linear(self.feature_dim, self.ag_hid_dim),
             nn.Tanh(),
+            nn.Dropout(self.dropout),
             nn.Linear(self.ag_hid_dim, self.ag_hid_dim),
             nn.ReLU(),
             nn.LayerNorm(self.ag_hid_dim),
@@ -245,16 +253,17 @@ class UniGONet(nn.Module):
         self.agc_mlp = nn.Sequential(
             nn.Linear(self.feature_dim, self.ag_hid_dim),
             nn.ReLU(),
+            nn.Dropout(self.dropout),
             nn.Linear(self.ag_hid_dim, self.feature_dim),
         )
         self.tanh = nn.Tanh()
 
         # 主干动力学
-        self.BackboneODE = BackboneODE(self.lookback, self.feature_dim, self.ode_hid_dim, self.method)
+        self.BackboneODE = BackboneODE(self.lookback, self.feature_dim, self.ode_hid_dim, self.method, self.dropout)
 
         # 精炼层
         self.refiners = nn.ModuleList([
-            Refiner(self.lookback, self.horizon, self.feature_dim, self.sr_hid_dim) 
+            Refiner(self.lookback, self.horizon, self.feature_dim, self.sr_hid_dim, self.dropout) 
             for _ in range(self.k)
         ])
 
