@@ -195,7 +195,12 @@ class UniGONet(nn.Module):
         self.method = self.model_args.method
         self.k = self.model_args.k * self.args.data.batch_size  # 假设 'k' 在 model_args 中定义
         self.dt = self.model_args.dt
-        
+        self.refine = self.model_args.refine
+        self.other_loss = self.model_args.other_loss
+        self.rg = self.model_args.rg
+        self.onehot = self.model_args.onehot
+        self.uniform = self.model_args.uniform
+        self.refine_loss = self.model_args.refine_loss
         start_t = (self.lookback) * self.dt
         end_t = (self.lookback + self.horizon - 1) * self.dt
         self.tspan = torch.linspace(start_t, end_t, self.horizon)
@@ -321,60 +326,68 @@ class UniGONet(nn.Module):
         # 步骤7：映射回原始节点
         Y_coarse = torch.matmul(Y_supernode.squeeze(-1), assignment_matrix.t()).unsqueeze(-1)  # [horizon, num_nodes, feature_dim]
 
-        Y_refine = torch.zeros_like(Y_coarse)  # [horizon, num_nodes, feature_dim]
-        if isolate:
-            Y_coarse = Y_coarse.detach()
+        if self.refine:
+            Y_refine = torch.zeros_like(Y_coarse)  # [horizon, num_nodes, feature_dim]
+            if isolate:
+                Y_coarse = Y_coarse.detach()
 
-        # 使用 Refiner 精炼预测
-        num_clusters = len(torch.unique_consecutive(cluster_ptr)) - 1  # len(self.refiners)
-        
-        for k in range(num_clusters):
-            start = cluster_ptr[k]
-            end = cluster_ptr[k + 1]
-            cluster_nodes = cluster_node_indices[start:end]  # 获取簇 k 的节点索引
+            # 使用 Refiner 精炼预测
+            num_clusters = len(torch.unique_consecutive(cluster_ptr)) - 1  # len(self.refiners)
+            
+            for k in range(num_clusters):
+                start = cluster_ptr[k]
+                end = cluster_ptr[k + 1]
+                cluster_nodes = cluster_node_indices[start:end]  # 获取簇 k 的节点索引
 
-            if cluster_nodes.numel() == 0:
-                continue
-            else:
-                cluster_X = x[:, cluster_nodes, :]  # [lookback, cluster_nodes, feature_dim]
-                cluster_Y_coarse = Y_coarse[:, cluster_nodes, :]  # [horizon, cluster_nodes, feature_dim]
-                # 使用对应的 refiner 对簇内的节点进行精炼预测
-                refined_output = self.refiners[k](cluster_X, cluster_Y_coarse)  # [horizon, cluster_nodes, feature_dim]
-                # 将精炼的预测结果写回 Y_refine
-                Y_refine[:, cluster_nodes, :] = refined_output
-        
-        return Y_refine.permute(1, 0, 2).squeeze(-1), batch.y # , assignment_matrix, backbone, adj, # Y_supernode , Y_coarse, x, supernode_embeddings
+                if cluster_nodes.numel() == 0:
+                    continue
+                else:
+                    cluster_X = x[:, cluster_nodes, :]  # [lookback, cluster_nodes, feature_dim]
+                    cluster_Y_coarse = Y_coarse[:, cluster_nodes, :]  # [horizon, cluster_nodes, feature_dim]
+                    # 使用对应的 refiner 对簇内的节点进行精炼预测
+                    refined_output = self.refiners[k](cluster_X, cluster_Y_coarse)  # [horizon, cluster_nodes, feature_dim]
+                    # 将精炼的预测结果写回 Y_refine
+                    Y_refine[:, cluster_nodes, :] = refined_output
+        else:
+            Y_refine = Y_coarse
+        if self.other_loss:
+            return Y_refine.permute(1, 0, 2).squeeze(-1), batch.y , assignment_matrix, backbone, adj, # Y_supernode , Y_coarse, x, supernode_embeddings
+        else:
+            return Y_refine.permute(1, 0, 2).squeeze(-1), batch.y # , assignment_matrix, backbone, adj, # Y_supernode , Y_coarse, x, supernode_embeddings
     
     
-    # def loss(self, pred, target, assignment_matrix, supernode_adj, orig_adj):
-    def loss(self, pred, target):
+    def loss(self, pred, target, *args):
         # 预测损失（MSE）
         pred_loss = F.mse_loss(pred, target)
 
-        # # 重构损失
-        # rg_loss, _ = self._rg_loss(Y_supernode, target, assignment_matrix)
-
-        # # One-hot 损失（鼓励每个节点只属于一个超节点）
-        # onehot_loss = self._onehot_loss(assignment_matrix)
-
-        # # 均匀分布损失（鼓励超节点大小均匀）
-        # uniform_loss = self._uniform_loss(assignment_matrix)
-
-        # # 重构损失（鼓励保持原始图结构）
-        # recons_loss = self._recons_loss(assignment_matrix, orig_adj)
-
-        # # 精炼损失
-        # refine_loss, _ = self._refine_loss(Y_refine, target)
-
         # 总损失
-        total_loss = (
-            pred_loss 
-            # + self.lambda_rg * rg_loss +
-            # self.lambda_onehot * onehot_loss +
-            # self.lambda_uniform * uniform_loss +
-            # self.lambda_recons * recons_loss +
-            # self.lambda_refine * refine_loss
-        )
+        total_loss = pred_loss
+
+        if self.other_loss and len(args) >= 3:
+            assignment_matrix, supernode_adj, orig_adj = args[:3]
+            
+            # 重构损失
+            rg_loss, _ = self._rg_loss(args[3], target, assignment_matrix) if len(args) > 3 else (0, None)
+
+            # One-hot 损失（鼓励每个节点只属于一个超节点）
+            onehot_loss = self._onehot_loss(assignment_matrix)
+
+            # 均匀分布损失（鼓励超节点大小均匀）
+            uniform_loss = self._uniform_loss(assignment_matrix)
+
+            # # 重构损失（鼓励保持原始图结构）
+            # recons_loss = self._recons_loss(assignment_matrix, orig_adj)
+            if self.refine:
+                # 精炼损失
+                refine_loss, _ = self._refine_loss(args[4], target) if len(args) > 4 else (0, None)
+            else:
+                refine_loss = 0
+            total_loss += (
+                self.rg * rg_loss +
+                self.onehot * onehot_loss +
+                self.uniform * uniform_loss +
+                self.refine_loss * refine_loss
+            )
 
         return total_loss
 

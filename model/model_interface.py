@@ -43,22 +43,34 @@ class MInterface(pl.LightningModule):
         return self.model(batch)
 
     def training_step(self, batch, batch_idx):
-        pred, target = self(batch)
-        loss = self.model.loss(pred, target)
+        if self.args.model.other_loss:
+            pred, target, *args = self(batch)
+            loss = self.model.loss(pred, target, *args)
+        else:
+            pred, target = self(batch)
+            loss = self.model.loss(pred, target)
         self.log('train_loss', loss, on_step=True, on_epoch=True, prog_bar=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
-        pred, target = self(batch)
-        loss = self.model.loss(pred, target)
+        if self.args.model.other_loss:
+            pred, target, *args = self(batch)
+            loss = self.model.loss(pred, target, *args)
+        else:
+            pred, target = self(batch)
+            loss = self.model.loss(pred, target)
         self.log('val_loss', loss, on_step=False, on_epoch=True, prog_bar=True)
         
         self.val_metric.update(pred, target)
         return loss
 
     def test_step(self, batch, batch_idx):
-        pred, target = self(batch)
-        loss = self.model.loss(pred, target)
+        if self.args.model.other_loss:
+            pred, target, *args = self(batch)
+            loss = self.model.loss(pred, target, *args)
+        else:
+            pred, target = self(batch)
+            loss = self.model.loss(pred, target)
         self.log('test_loss', loss, on_step=False, on_epoch=True, prog_bar=True)
         
         self.test_metric.update(pred, target)

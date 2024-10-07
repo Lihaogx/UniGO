@@ -8,7 +8,7 @@ trialCommand: python main.py --config config/unigo.yaml
 trialCodeDirectory: .
 trialGpuNumber: 1  # 每个试验只使用1张GPU
 tuner:
-  name: Random
+  name: TPE
   classArgs:
     optimize_mode: minimize
 trainingService:

@@ -37,6 +37,8 @@ optim:
   scheduler: step
   steps: 100
 model:
+  gnn_type: GAT
+  num_layers: 3
   dt: 0.1
   feature_dim: 1
   lookback: 15

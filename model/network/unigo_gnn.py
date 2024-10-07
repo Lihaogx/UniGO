@@ -161,7 +161,7 @@ class UniGONet_GNN(nn.Module):
         self.ag_hid_dim = self.model_args.ag_hid_dim
         self.ode_hid_dim = self.model_args.ode_hid_dim
         self.gnn_type = self.model_args.gnn_type
-        self.gnn_layers = self.model_args.gnn_layers
+        self.gnn_layers = self.model_args.num_layers
         self.pool_type = self.model_args.pool_type
         self.method = self.model_args.method
         self.k = self.model_args.k * self.args.data.batch_size  # 假设 'k' 在 model_args 中定义
@@ -313,7 +313,7 @@ class UniGONet_GNN(nn.Module):
     def loss(self, pred, target):
         # 预测损失（MSE）
         pred_loss = F.mse_loss(pred, target)
-
+        
         # # 重构损失
         # rg_loss, _ = self._rg_loss(Y_supernode, target, assignment_matrix)
 

@@ -8,7 +8,7 @@ repeat: 1
 run_multiple_splits: []
 model_type: unigo
 data:
-  file_path_train: /home/lh/UniGO/data/synthetic_filtered.h5
+  file_path_train: /home/lh/UniGO/data/synthetic_v2.h5
   file_path_test: null
   task_type: pre-training
   split:
@@ -17,7 +17,7 @@ data:
     - 0.2
   batch_size: 10
   ratio: 0.2
-  name: syn_filtered
+  name: syn_filtered_v2
 train:
   gpus:
     - 0
@@ -39,12 +39,18 @@ optim:
 model:
   dt: 0.1
   feature_dim: 1
-  lookback: 15
-  horizon: 50
+  lookback: 10
+  horizon: 90
   pool_ratio: 0.2
   ag_hid_dim: 16
   ode_hid_dim: 16
   sr_hid_dim: 16
-  pool_type: topk
+  pool_type: sag
   method: euler
   k: 3
+  refine: true
+  other_loss: true
+  rg: 1
+  onehot: 1
+  uniform: 1
+  refine_loss: 1

@@ -101,6 +101,12 @@ def main(args):
         args.model.pool_ratio = params.get('pool_ratio', args.model.pool_ratio)
         args.model.dt = params.get('dt', args.model.dt)
         args.model.pool_type = params.get('pool_type', args.model.pool_type)
+        args.model.refine = params.get('refine', args.model.refine)
+        args.model.other_loss = params.get('other_loss', args.model.other_loss)
+        args.model.rg = params.get('rg', args.model.rg)
+        args.model.onehot = params.get('onehot', args.model.onehot)
+        args.model.uniform = params.get('uniform', args.model.uniform)
+        args.model.refine_loss = params.get('refine_loss', args.model.refine_loss)
     elif args.model_type == 'unigo_gnn':
         args.model.pool_ratio = params.get('pool_ratio', args.model.pool_ratio)
         args.model.pool_type = params.get('pool_type', args.model.pool_type)
