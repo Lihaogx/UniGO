@@ -97,7 +97,7 @@ def main(args):
         args.model.gnn_type = params.get('gnn_type', args.model.gnn_type)
         args.model.num_layers = params.get('num_layers', args.model.num_layers)
         
-    elif args.model_type == 'unigo':
+    elif args.model_type in ['unigo', 'unigo_sage']:
         args.model.pool_ratio = params.get('pool_ratio', args.model.pool_ratio)
         args.model.dt = params.get('dt', args.model.dt)
         args.model.pool_type = params.get('pool_type', args.model.pool_type)

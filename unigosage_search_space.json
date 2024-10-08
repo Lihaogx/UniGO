@@ -1,11 +1,11 @@
 {
-  "pool_ratio": {"_type": "choice", "_value": [0.1, 0.2, 0.3]},
+  "pool_ratio": {"_type": "choice", "_value": [0.3]},
   "dt": {"_type": "choice", "_value": [0.1]},
   "lr": {"_type": "loguniform", "_value": [1e-5, 1e-2]},
   "hid_dim": {"_type": "choice", "_value": [16]},
   "pool_type": {"_type": "choice", "_value": ["sag"]},
   "refine": {"_type": "choice", "_value": [true]},
-  "other_loss": {"_type": "choice", "_value": [false, true]},
+  "other_loss": {"_type": "choice", "_value": [true]},
   "rg": {"_type": "loguniform", "_value": [0.05,1]},
   "onehot": {"_type": "loguniform", "_value": [0.05, 1]},
   "uniform": {"_type": "loguniform", "_value": [0.05, 1]},
