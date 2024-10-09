@@ -216,9 +216,10 @@ class UniGONet_Reduce(nn.Module):
         feature_dim = self.feature_dim  # lookback
 
         # 步骤2：生成邻接矩阵 adj 从 edge_index
-        adj = torch.sparse_coo_tensor(edge_index, torch.ones(edge_index.size(1), device=x.device), (num_nodes, num_nodes))
-        adj = adj.coalesce()
-        adj = adj + adj.transpose(0, 1)  # 确保对称性
+        adj = torch.zeros((num_nodes, num_nodes), device=x.device)
+        adj[edge_index[0], edge_index[1]] = 1
+        adj = adj + adj.t()  # 确保对称性
+        # adj.fill_diagonal_(1)  # 添加自环
 
         # 步骤3：池化操作
         pooled_x, pooled_edge_index, pooled_edge_attr, pooled_batch, perm, score = self.pool(x, edge_index, edge_attr=None, batch=batch.batch)  # pooled_x: [num_supernodes, lookback]
@@ -231,8 +232,8 @@ class UniGONet_Reduce(nn.Module):
         assignment_matrix = self.assignment_matrix(node_repr, supernode_repr, batch.batch, pooled_batch)
 
         # 计算超节点邻接矩阵
-        temp = torch.sparse.mm(adj, assignment_matrix)  # [num_nodes, num_supernodes]
-        backbone = torch.sparse.mm(assignment_matrix.transpose(0, 1), temp)  # [num_supernodes, num_supernodes]
+        temp = torch.matmul(adj, assignment_matrix)  # [num_nodes, num_supernodes]
+        backbone = torch.matmul(assignment_matrix.transpose(0, 1), temp)  # [num_supernodes, num_supernodes]
 
         # 步骤5：状态聚合
         # 使用GraphSAGE层进行消息传递
@@ -242,7 +243,7 @@ class UniGONet_Reduce(nn.Module):
         agc_repr = self.tanh(agc_repr)
 
         # 使用分配矩阵得到超节点嵌入
-        supernode_embeddings = torch.sparse.mm(assignment_matrix.transpose(0, 1), agc_repr)  # [lookback, num_supernodes]
+        supernode_embeddings = torch.matmul(assignment_matrix.transpose(0, 1), agc_repr)  # [num_supernodes, ag_hid_dim]
 
         # 步骤6：主干动力学
         Y_supernode = self.Backbone(supernode_embeddings, backbone)  # [horizon, num_supernodes]
@@ -283,28 +284,19 @@ class UniGONet_Reduce(nn.Module):
         
     def assignment_matrix(self, node_repr, supernode_repr, batch, pooled_batch):
         """
-        构建全局的稀疏分配矩阵，将原始节点映射到池化后的节点（超节点）。
+        构建全局的分配矩阵，将原始节点映射到池化后的节点（超节点）。
         
         参数：
-        - x: 原始节点特征，形状为 [num_nodes, feature_dim]
-        - pool_x: 池化后的节点特征，形状为 [num_pool_nodes, feature_dim]
+        - node_repr: 原始节点表示，形状为 [num_nodes, feature_dim]
+        - supernode_repr: 池化后的节点表示，形状为 [num_pool_nodes, feature_dim]
         - batch: 原始节点的 batch 向量，形状为 [num_nodes]
-        - pool_batch: 池化后节点的 batch 向量，形状为 [num_pool_nodes]
+        - pooled_batch: 池化后节点的 batch 向量，形状为 [num_pool_nodes]
         
         返回：
-        - assignment_matrix: 稀疏的分配矩阵，形状为 [num_nodes, num_pool_nodes]
+        - assignment_matrix: 稠密的分配矩阵，形状为 [num_nodes, num_pool_nodes]
         """
-        # 获取设备信息
         device = node_repr.device
-        # 初始化全局索引和数值列表
-        indices_row = []
-        indices_col = []
-        values = []
-
-        # 记录全局的节点和超节点偏移量
-        node_offset = 0
-        supernode_offset = 0
-
+        
         # 获取批次中的唯一图索引
         unique_batches = batch.unique()
 
@@ -322,9 +314,8 @@ class UniGONet_Reduce(nn.Module):
         total_num_nodes = node_repr.size(0)
         total_num_supernodes = supernode_repr.size(0)
 
-        # 创建节点和超节点的全局索引
-        node_global_indices = torch.arange(total_num_nodes, device=device)
-        supernode_global_indices = torch.arange(total_num_supernodes, device=device)
+        # 初始化稠密分配矩阵
+        assignment_matrix = torch.zeros((total_num_nodes, total_num_supernodes), device=device)
 
         # 遍历每个子图，构建分配矩阵
         for graph_id in unique_batches:
@@ -332,53 +323,21 @@ class UniGONet_Reduce(nn.Module):
             node_mask = (node_batch == graph_id)
             supernode_mask = (supernode_batch == graph_id)
 
-            node_indices_sub = node_global_indices[node_mask]
-            supernode_indices_sub = supernode_global_indices[supernode_mask]
-
-            node_repr_sub = node_repr[node_mask]             # [num_nodes_sub, hidden_dim]
-            supernode_repr_sub = supernode_repr[supernode_mask]  # [num_supernodes_sub, hidden_dim]
+            node_repr_sub = node_repr[node_mask]
+            supernode_repr_sub = supernode_repr[supernode_mask]
 
             # 如果当前子图没有超节点，跳过
             if supernode_repr_sub.size(0) == 0:
                 continue
 
             # 计算相似度矩阵
-            similarity_sub = torch.matmul(node_repr_sub, supernode_repr_sub.t())  # [num_nodes_sub, num_supernodes_sub]
+            similarity_sub = torch.matmul(node_repr_sub, supernode_repr_sub.t())
 
             # 计算分配矩阵
-            assignment_matrix_sub = F.softmax(similarity_sub, dim=1)  # [num_nodes_sub, num_supernodes_sub]
+            assignment_matrix_sub = F.softmax(similarity_sub, dim=1)
 
-            # 获取分配矩阵的非零元素索引和数值
-            num_nodes_sub, num_supernodes_sub = assignment_matrix_sub.shape
-            row_idx_sub = node_indices_sub.unsqueeze(1).expand(-1, num_supernodes_sub).reshape(-1)
-            col_idx_sub = supernode_indices_sub.unsqueeze(0).expand(num_nodes_sub, -1).reshape(-1)
-            values_sub = assignment_matrix_sub.reshape(-1)
-
-            # 添加到全局索引和数值列表中
-            indices_row.append(row_idx_sub)
-            indices_col.append(col_idx_sub)
-            values.append(values_sub)
-
-        # 如果没有任何非零元素，返回一个全零的稀疏矩阵
-        if len(values) == 0:
-            assignment_matrix = torch.sparse_coo_tensor(
-                torch.empty((2, 0), dtype=torch.long, device=device),
-                torch.empty((0,), dtype=torch.float32, device=device),
-                size=(total_num_nodes, total_num_supernodes)
-            )
-            return assignment_matrix
-
-        # 拼接全局索引和数值
-        indices_row = torch.cat(indices_row)
-        indices_col = torch.cat(indices_col)
-        values = torch.cat(values)
-
-        # 构建稀疏分配矩阵
-        assignment_matrix = torch.sparse_coo_tensor(
-            indices=torch.stack([indices_row, indices_col], dim=0),
-            values=values,
-            size=(total_num_nodes, total_num_supernodes)
-        ).coalesce()
+            # 将子图的分配矩阵填充到全局分配矩阵中
+            assignment_matrix[node_mask][:, supernode_mask] = assignment_matrix_sub
 
         return assignment_matrix
         
