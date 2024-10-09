@@ -4,17 +4,6 @@ import torch.nn.functional as F
 from torch_geometric.nn import GCNConv, SAGPooling, TopKPooling, EdgePooling, ASAPooling, PANPooling, MemPooling,SAGEConv
 import torchdiffeq as ode
 
-def normalized_laplacian(A: torch.Tensor):
-    """Symmetrically Normalized Laplacian: I - D^-1/2 * ( A ) * D^-1/2"""
-    out_degree = torch.sum(A, dim=1)
-    int_degree = torch.sum(A, dim=0)
-    
-    out_degree_sqrt_inv = torch.pow(out_degree, -0.5)
-    int_degree_sqrt_inv = torch.pow(int_degree, -0.5)
-    mx_operator = torch.eye(A.shape[0], device=A.device) - torch.diag(out_degree_sqrt_inv) @ A @ torch.diag(int_degree_sqrt_inv)
-    
-    return mx_operator
-
 
 
 class Refiner(nn.Module):
@@ -65,112 +54,6 @@ class Refiner(nn.Module):
         refined_Y = self.mlp_out(output)  # [cluster_nodes, horizon]
         
         return refined_Y #  [horizon, cluster_nodes]
-
-
-class GNN(nn.Module):
-    def __init__(self, feature_dim, ode_hid_dim):
-        super(GNN, self).__init__()
-        self.f1 = nn.Sequential(
-            nn.Linear(feature_dim, ode_hid_dim, bias=True), 
-            nn.ReLU(),
-            nn.Linear(ode_hid_dim, ode_hid_dim, bias=True),
-        )
-        self.f2 = nn.Sequential(
-            nn.Linear(ode_hid_dim, ode_hid_dim, bias=True), 
-            nn.ReLU(),
-            nn.Linear(ode_hid_dim, feature_dim, bias=True),
-        )
-        
-        self.adj = None
-
-    def forward(self, x):
-        x = self.f1(x)
-        x = self.adj @ x
-        x = self.f2(x)
-        return x
-    
-class BackboneODE(nn.Module):
-    """微分方程模型 dX/dt = f(X) + g(X, A)"""
-    def __init__(self, lookback, feature_dim, ode_hid_dim, method, dropout):
-        super(BackboneODE, self).__init__()
-        
-        self.method = method
-        self.feature_dim = feature_dim
-        
-        # 初始编码器：将 lookback 维度映射到 ode_hid_dim，再映射到 1
-        self.init_enc = nn.Sequential(
-            nn.Linear(lookback, ode_hid_dim, bias=True), 
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(ode_hid_dim, 1, bias=True)
-        )
-        
-        # f 网络：处理自身特征变化
-        self.f = nn.Sequential(
-            nn.Linear(feature_dim, ode_hid_dim, bias=True),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(ode_hid_dim, feature_dim, bias=True),
-        )
-        
-        # g 网络：处理邻居节点的影响
-        self.g = GNN(feature_dim, ode_hid_dim)
-        
-    def dxdt(self, t, x):
-        """
-        微分方程的右侧函数 dX/dt = f(X) + g(X, A)
-
-        参数:
-            t: 当前时间点（未使用，但 ODE 求解器需要）
-            x: 当前状态，形状为 [num_supernodes, feature_dim]
-            adj_w: 邻接矩阵，形状为 [num_supernodes, num_supernodes]
-        
-        返回:
-            dX/dt，形状为 [num_supernodes, feature_dim]
-        """
-        x_self = self.f(x)         # [num_supernodes, feature_dim]
-        
-        x_neigh = self.g(x) # [num_supernodes, feature_dim]
-        dxdt = x_self + x_neigh    # [num_supernodes, feature_dim]
-        dxdt = torch.clamp(dxdt, min=-1e3, max=1e3)
-        if torch.isnan(dxdt).any() or torch.isinf(dxdt).any():
-            print(f"NaN or Inf detected in dxdt at t={t}")
-            print(f"x_self stats: min={x_self.min().item():.4f}, max={x_self.max().item():.4f}")
-            print(f"x_neigh stats: min={x_neigh.min().item():.4f}, max={x_neigh.max().item():.4f}")
-        return dxdt
-
-    def forward(self, tspan, x, adj_w):
-        """
-        前向传播方法
-
-        参数:
-            tspan: 时间跨度，用于 ODE 求解器，形状为 [horizon]
-            x: 输入张量，形状为 [lookback, num_supernodes, ag_hid_dim]
-            adj_w: 邻接矩阵，形状为 [num_supernodes, num_supernodes]
-        
-        返回:
-            out: ODE 求解后的输出，形状为 [horizon, num_supernodes, feature_dim]
-        """
-        
-        # 1. 转换输入张量的维度
-        # 输入 x 的形状为 [lookback, num_supernodes, feature_dim]
-        # 需要转置为 [num_supernodes, feature_dim, lookback] 以便进行线性层处理
-        tspan = tspan.to(x.device)
-        x = x.permute(1, 2, 0)  # [num_supernodes, feature_dim, lookback]
-        
-        # 2. 使用 init_enc 进行编码，将 lookback 维度映射到 1
-        x = self.init_enc(x)  # [num_supernodes, feature_dim, 1]
-        
-        # 3. 去除最后一维，得到初始状态 x0
-        x0 = x.squeeze(-1)  # [num_supernodes, feature_dim]
-        self.g.adj = adj_w
-        # 4. ODE 求解，计算未来的状态
-        # odeint 的输入是函数 dxdt, 初始状态 x0, 时间跨度 tspan
-        # dxdt 需要接受 t, x, adj_w
-        out = ode.odeint(self.dxdt, x0, tspan, method=self.method)  # [horizon, num_supernodes, feature_dim]
-        # print("BackboneODE output stats:")
-        # print(f"out: min={out.min().item():.4f}, max={out.max().item():.4f}, mean={out.mean().item():.4f}, std={out.std().item():.4f}")
-        return out  # [horizon, num_supernodes, feature_dim]
 
 class GraphWaveNet(nn.Module):
     def __init__(self, lookback, horizon, hidden_dim, kernel_size=2, layers=3):
@@ -299,7 +182,6 @@ class UniGONet_Reduce(nn.Module):
         # 定义 GraphSAGE 层
         self.graphsage = SAGEConv(self.ag_hid_dim, self.ag_hid_dim)
         # 主干动力学
-        self.BackboneODE = BackboneODE(self.lookback, self.feature_dim, self.ode_hid_dim, self.method, self.dropout)
         self.Backbone = GraphWaveNet(self.lookback, self.horizon, self.ode_hid_dim)
         # 精炼层
         self.refiners = nn.ModuleList([
@@ -334,27 +216,23 @@ class UniGONet_Reduce(nn.Module):
         feature_dim = self.feature_dim  # lookback
 
         # 步骤2：生成邻接矩阵 adj 从 edge_index
-        adj = torch.zeros(num_nodes, num_nodes, device=x.device)
-        adj[edge_index[0], edge_index[1]] = 1
-        adj = adj + adj.t()  # 确保对称性（无向图）
-
-        # 计算标准化拉普拉斯矩阵
-        norm_lap = normalized_laplacian(adj)  # [num_nodes, num_nodes]
+        adj = torch.sparse_coo_tensor(edge_index, torch.ones(edge_index.size(1), device=x.device), (num_nodes, num_nodes))
+        adj = adj.coalesce()
+        adj = adj + adj.transpose(0, 1)  # 确保对称性
 
         # 步骤3：池化操作
-        pooled_x = self.pool(x, edge_index)[0]  # pooled_x: [num_supernodes, lookback]
+        pooled_x, pooled_edge_index, pooled_edge_attr, pooled_batch, perm, score = self.pool(x, edge_index, edge_attr=None, batch=batch.batch)  # pooled_x: [num_supernodes, lookback]
         num_supernodes = pooled_x.size(0)
         # 步骤4：表征网络
         node_repr = self.repr_net_x(x)  # [num_nodes, ag_hid_dim]
         supernode_repr = self.repr_net_super(pooled_x)  # [num_supernodes, ag_hid_dim]
         
         # 计算节点表示与超节点表示的相似度
-        similarity = torch.matmul(node_repr, supernode_repr.t())  # [num_nodes, num_supernodes]
-        assignment_matrix = F.softmax(similarity, dim=1)  # [num_nodes, num_supernodes]
+        assignment_matrix = self.assignment_matrix(node_repr, supernode_repr, batch.batch, pooled_batch)
 
         # 计算超节点邻接矩阵
-        adj_mean = adj.mean(dim=0, keepdim=True).expand_as(adj)  # [num_nodes, num_nodes]
-        backbone = torch.matmul(assignment_matrix.t(), torch.matmul(adj_mean, assignment_matrix))  # [num_supernodes, num_supernodes]
+        temp = torch.sparse.mm(adj, assignment_matrix)  # [num_nodes, num_supernodes]
+        backbone = torch.sparse.mm(assignment_matrix.transpose(0, 1), temp)  # [num_supernodes, num_supernodes]
 
         # 步骤5：状态聚合
         # 使用GraphSAGE层进行消息传递
@@ -364,10 +242,10 @@ class UniGONet_Reduce(nn.Module):
         agc_repr = self.tanh(agc_repr)
 
         # 使用分配矩阵得到超节点嵌入
-        supernode_embeddings = torch.matmul(assignment_matrix.t(), agc_repr)  # [lookback, num_supernodes, feature_dim]
+        supernode_embeddings = torch.sparse.mm(assignment_matrix.transpose(0, 1), agc_repr)  # [lookback, num_supernodes]
 
         # 步骤6：主干动力学
-        Y_supernode = self.Backbone(supernode_embeddings, backbone)  # [horizon, num_supernodes, feature_dim]
+        Y_supernode = self.Backbone(supernode_embeddings, backbone)  # [horizon, num_supernodes]
 
         # 步骤7：映射回原始节点
         Y_coarse = torch.matmul(assignment_matrix, Y_supernode)  # [horizon, num_nodes]
@@ -399,9 +277,111 @@ class UniGONet_Reduce(nn.Module):
         if self.other_loss:
             return Y_refine, batch.y , assignment_matrix, backbone, adj, # Y_supernode , Y_coarse, x, supernode_embeddings
         else:
-            return Y_refine, batch.y # , assignment_matrix, backbone, adj, # Y_supernode , Y_coarse, x, supernode_embeddings
+            return Y_refine, batch.y # assignment_matrix, backbone, adj, # Y_supernode , Y_coarse, x, supernode_embeddings
     
-    
+        
+        
+    def assignment_matrix(self, node_repr, supernode_repr, batch, pooled_batch):
+        """
+        构建全局的稀疏分配矩阵，将原始节点映射到池化后的节点（超节点）。
+        
+        参数：
+        - x: 原始节点特征，形状为 [num_nodes, feature_dim]
+        - pool_x: 池化后的节点特征，形状为 [num_pool_nodes, feature_dim]
+        - batch: 原始节点的 batch 向量，形状为 [num_nodes]
+        - pool_batch: 池化后节点的 batch 向量，形状为 [num_pool_nodes]
+        
+        返回：
+        - assignment_matrix: 稀疏的分配矩阵，形状为 [num_nodes, num_pool_nodes]
+        """
+        # 获取设备信息
+        device = node_repr.device
+        # 初始化全局索引和数值列表
+        indices_row = []
+        indices_col = []
+        values = []
+
+        # 记录全局的节点和超节点偏移量
+        node_offset = 0
+        supernode_offset = 0
+
+        # 获取批次中的唯一图索引
+        unique_batches = batch.unique()
+
+        # 将节点和池化节点按照 batch 排序，以确保顺序一致
+        batch_sorted_indices = batch.argsort()
+        pool_batch_sorted_indices = pooled_batch.argsort()
+
+        node_repr = node_repr[batch_sorted_indices]
+        node_batch = batch[batch_sorted_indices]
+
+        supernode_repr = supernode_repr[pool_batch_sorted_indices]
+        supernode_batch = pooled_batch[pool_batch_sorted_indices]
+
+        # 初始化总的节点和超节点数量
+        total_num_nodes = node_repr.size(0)
+        total_num_supernodes = supernode_repr.size(0)
+
+        # 创建节点和超节点的全局索引
+        node_global_indices = torch.arange(total_num_nodes, device=device)
+        supernode_global_indices = torch.arange(total_num_supernodes, device=device)
+
+        # 遍历每个子图，构建分配矩阵
+        for graph_id in unique_batches:
+            # 获取当前子图的节点和超节点索引
+            node_mask = (node_batch == graph_id)
+            supernode_mask = (supernode_batch == graph_id)
+
+            node_indices_sub = node_global_indices[node_mask]
+            supernode_indices_sub = supernode_global_indices[supernode_mask]
+
+            node_repr_sub = node_repr[node_mask]             # [num_nodes_sub, hidden_dim]
+            supernode_repr_sub = supernode_repr[supernode_mask]  # [num_supernodes_sub, hidden_dim]
+
+            # 如果当前子图没有超节点，跳过
+            if supernode_repr_sub.size(0) == 0:
+                continue
+
+            # 计算相似度矩阵
+            similarity_sub = torch.matmul(node_repr_sub, supernode_repr_sub.t())  # [num_nodes_sub, num_supernodes_sub]
+
+            # 计算分配矩阵
+            assignment_matrix_sub = F.softmax(similarity_sub, dim=1)  # [num_nodes_sub, num_supernodes_sub]
+
+            # 获取分配矩阵的非零元素索引和数值
+            num_nodes_sub, num_supernodes_sub = assignment_matrix_sub.shape
+            row_idx_sub = node_indices_sub.unsqueeze(1).expand(-1, num_supernodes_sub).reshape(-1)
+            col_idx_sub = supernode_indices_sub.unsqueeze(0).expand(num_nodes_sub, -1).reshape(-1)
+            values_sub = assignment_matrix_sub.reshape(-1)
+
+            # 添加到全局索引和数值列表中
+            indices_row.append(row_idx_sub)
+            indices_col.append(col_idx_sub)
+            values.append(values_sub)
+
+        # 如果没有任何非零元素，返回一个全零的稀疏矩阵
+        if len(values) == 0:
+            assignment_matrix = torch.sparse_coo_tensor(
+                torch.empty((2, 0), dtype=torch.long, device=device),
+                torch.empty((0,), dtype=torch.float32, device=device),
+                size=(total_num_nodes, total_num_supernodes)
+            )
+            return assignment_matrix
+
+        # 拼接全局索引和数值
+        indices_row = torch.cat(indices_row)
+        indices_col = torch.cat(indices_col)
+        values = torch.cat(values)
+
+        # 构建稀疏分配矩阵
+        assignment_matrix = torch.sparse_coo_tensor(
+            indices=torch.stack([indices_row, indices_col], dim=0),
+            values=values,
+            size=(total_num_nodes, total_num_supernodes)
+        ).coalesce()
+
+        return assignment_matrix
+        
     def loss(self, pred, target, *args):
         # 预测损失（MSE）
         pred_loss = F.mse_loss(pred, target)
@@ -475,3 +455,5 @@ class UniGONet_Reduce(nn.Module):
         else:
             refine_loss = torch.mean((y_refine - Y) ** 2, dim=dim)
         return refine_loss, Y
+    
+    
