@@ -1,10 +1,10 @@
-experimentName: unigosage_nni
+experimentName: unigoreduce_nni
 trialConcurrency: 4  # 根据您的GPU数量设置
 maxExperimentDuration: 96h
 maxTrialNumber: 200
 # maxTrialNumPerGpu: 1
 searchSpaceFile: unigo_search_space.json
-trialCommand: python main.py --config config/unigo_sage.yaml
+trialCommand: python main.py --config config/unigo_reduce.yaml
 trialCodeDirectory: .
 trialGpuNumber: 1  # 每个试验只使用1张GPU
 tuner:

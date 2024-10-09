@@ -6,7 +6,7 @@ seed: 1234
 num_workers: 16
 repeat: 1
 run_multiple_splits: []
-model_type: gnn
+model_type: unigo_reduce
 data:
   file_path_train: /home/lh/UniGO/data/synthetic_v2.h5
   file_path_test: null
@@ -16,7 +16,7 @@ data:
     - 0.1
     - 0.2
   batch_size: 10
-  ratio: 1
+  ratio: 0.2
   name: syn_filtered_v2
 train:
   gpus:
@@ -37,9 +37,7 @@ optim:
   scheduler: step
   steps: 100
 model:
-  gnn_type: GAT
   dt: 0.1
-  num_layers: 3
   feature_dim: 1
   lookback: 10
   horizon: 90
@@ -47,13 +45,14 @@ model:
   ag_hid_dim: 16
   ode_hid_dim: 16
   sr_hid_dim: 16
-  pool_type: topk
+  pool_type: sag
   method: euler
   k: 3
   refine: true
-  other_loss: true
+  other_loss: false
   rg: 1
   onehot: 1
   uniform: 1
   refine_loss: 1
   dropout: 0.1
+  

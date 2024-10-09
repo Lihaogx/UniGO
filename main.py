@@ -96,7 +96,8 @@ def main(args):
     if args.model_type == 'gnn':
         args.model.gnn_type = params.get('gnn_type', args.model.gnn_type)
         args.model.num_layers = params.get('num_layers', args.model.num_layers)
-        
+    if args.model_type == "unigo_reduce":
+        args.model.pool_ratio = params.get('pool_ratio', args.model.pool_ratio)
     elif args.model_type in ['unigo', 'unigo_sage']:
         args.model.pool_ratio = params.get('pool_ratio', args.model.pool_ratio)
         args.model.dt = params.get('dt', args.model.dt)
@@ -108,6 +109,7 @@ def main(args):
         args.model.uniform = params.get('uniform', args.model.uniform)
         args.model.refine_loss = params.get('refine_loss', args.model.refine_loss)
         args.model.dropout = params.get('dropout', args.model.dropout)
+        args.model.method = params.get('method', args.model.method)
     elif args.model_type == 'unigo_gnn':
         args.model.pool_ratio = params.get('pool_ratio', args.model.pool_ratio)
         args.model.pool_type = params.get('pool_type', args.model.pool_type)
