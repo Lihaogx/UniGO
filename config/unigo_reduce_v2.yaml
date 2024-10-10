@@ -6,7 +6,7 @@ seed: 1234
 num_workers: 16
 repeat: 1
 run_multiple_splits: []
-model_type: unigo_reduce
+model_type: unigo_reducev2
 data:
   file_path_train: /home/lh/UniGO/data/synthetic_v2.h5
   file_path_test: null

@@ -27,8 +27,9 @@ from model.network.unigo import UniGONet
 from model.network.unigo_gnn import UniGONet_GNN
 from model.network.unigo_sage import UniGONet_Sage
 from model.network.unigo_reduce import UniGONet_Reduce
+from model.network.unigo_reduce_v2 import UniGONet_ReduceV2
 from model.metric.ODMetrics import ODMetrics
-model = {'gnn':FlexibleGNN, 'unigo':UniGONet, 'unigo_gnn':UniGONet_GNN, 'unigo_sage':UniGONet_Sage, "unigo_reduce":UniGONet_Reduce}
+model = {'gnn':FlexibleGNN, 'unigo':UniGONet, 'unigo_gnn':UniGONet_GNN, 'unigo_sage':UniGONet_Sage, "unigo_reduce":UniGONet_Reduce, 'unigo_reducev2': UniGONet_ReduceV2}
 
 
 class MInterface(pl.LightningModule):

@@ -55,65 +55,27 @@ class Refiner(nn.Module):
         
         return refined_Y #  [horizon, cluster_nodes]
 
-class GraphWaveNet(nn.Module):
-    def __init__(self, lookback, horizon, hidden_dim, kernel_size=2, layers=3):
-        super(GraphWaveNet, self).__init__()
-        self.lookback = lookback
-        self.horizon = horizon
-        self.hidden_dim = hidden_dim
-        self.kernel_size = kernel_size
-        self.layers = layers
 
-        # 图卷积层
-        self.gc = GCNConv(hidden_dim, hidden_dim)
+class GraphSAGEBackbone(nn.Module):
+    def __init__(self, input_dim, hidden_dim, output_dim, num_layers):
+        super(GraphSAGEBackbone, self).__init__()
+        self.layers = nn.ModuleList()
+        self.layers.append(SAGEConv(input_dim, hidden_dim))
+        for _ in range(num_layers - 2):
+            self.layers.append(SAGEConv(hidden_dim, hidden_dim))
+        self.layers.append(SAGEConv(hidden_dim, output_dim))
+        self.num_layers = num_layers
 
-        # 时间卷积层
-        self.conv_layers = nn.ModuleList()
-        for i in range(self.layers):
-            dilation = 2 ** i
-            padding = (self.kernel_size - 1) * dilation
-            self.conv_layers.append(
-                nn.Conv1d(hidden_dim, hidden_dim, self.kernel_size, 
-                          dilation=dilation, padding=padding)
-            )
-
-        # 输出层
-        self.fc = nn.Linear(hidden_dim, horizon)  # 预测未来 horizon 个时间步
-
-    def forward(self, x, adj, edge_weight=None):
-        # 将邻接矩阵转换为边索引
-        edge_index = adj.nonzero().t().contiguous()
-        
-        # 图卷积
-        h = self.gc(x, edge_index, edge_weight)  # [num_nodes, hidden_dim]
-
-        # 准备时间卷积输入
-        h = h.unsqueeze(0).permute(0, 2, 1)  # [1, hidden_dim, num_nodes]
-
-        # 时间卷积和残差连接
-        skip_connections = []
-        for conv in self.conv_layers:
-            residual = h
-            h = F.relu(conv(h))
-            # 确保 h 和 residual 的尺寸一致
-            h = h[:, :, :residual.size(2)]
-            h = h + residual
-            skip_connections.append(h)
-
-        # 聚合跳跃连接
-        out = torch.sum(torch.stack(skip_connections), dim=0)
-        out = out.squeeze(0).permute(1, 0)  # [num_nodes, hidden_dim]
-
-        # 预测未来 horizon 个时间步
-        pred = self.fc(out)  # [num_nodes, horizon]
-
-        return pred  # [num_nodes, horizon]
+    def forward(self, x, edge_index):
+        for i in range(self.num_layers - 1):
+            x = F.relu(self.layers[i](x, edge_index))
+        x = self.layers[-1](x, edge_index)
+        return x
 
 
-
-class UniGONet_Reduce(nn.Module):
+class UniGONet_ReduceV2(nn.Module):
     def __init__(self, args):
-        super(UniGONet_Reduce, self).__init__()
+        super(UniGONet_ReduceV2, self).__init__()
         self.args = args
         self.model_args = self.args.model
         self.feature_dim = self.model_args.feature_dim
@@ -186,7 +148,9 @@ class UniGONet_Reduce(nn.Module):
         # 定义 GraphSAGE 层
         self.graphsage = SAGEConv(self.ag_hid_dim, self.ag_hid_dim)
         # 主干动力学
-        self.Backbone = GraphWaveNet(self.lookback, self.horizon, self.ode_hid_dim, self.kernel_size, self.num_layers)
+
+
+        self.Backbone = GraphSAGEBackbone(self.lookback, self.ode_hid_dim, self.horizon, self.num_layers)
         # 精炼层
         self.refiners = nn.ModuleList([
             Refiner(self.lookback, self.horizon, self.sr_hid_dim, self.dropout) 
