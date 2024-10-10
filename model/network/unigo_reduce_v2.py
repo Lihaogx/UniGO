@@ -150,7 +150,7 @@ class UniGONet_ReduceV2(nn.Module):
         # 主干动力学
 
 
-        self.Backbone = GraphSAGEBackbone(self.lookback, self.ode_hid_dim, self.horizon, self.num_layers)
+        self.Backbone = GraphSAGEBackbone(self.ode_hid_dim, self.ode_hid_dim, self.horizon, self.num_layers)
         # 精炼层
         self.refiners = nn.ModuleList([
             Refiner(self.lookback, self.horizon, self.sr_hid_dim, self.dropout) 
@@ -222,7 +222,9 @@ class UniGONet_ReduceV2(nn.Module):
         supernode_embeddings = torch.matmul(assignment_matrix.transpose(0, 1), agc_repr)  # [num_supernodes, ag_hid_dim]
 
         # 步骤6：主干动力学
-        Y_supernode = self.Backbone(supernode_embeddings, backbone)  # [horizon, num_supernodes]
+        # 根据backbone生成edge_index
+        backbone_edge_index = (backbone > 0).nonzero().t()
+        Y_supernode = self.Backbone(supernode_embeddings, backbone_edge_index)  # [horizon, num_supernodes]
 
         # 步骤7：映射回原始节点
         Y_coarse = torch.matmul(assignment_matrix, Y_supernode)  # [horizon, num_nodes]
