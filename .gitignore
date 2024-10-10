@@ -2,6 +2,8 @@ run/
 results/
 logger/
 ckpt/
+model/__pycache__
+/__pycache__
 .vscode/
 /data/raw_data
 /data/real_data
