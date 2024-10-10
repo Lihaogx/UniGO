@@ -266,7 +266,13 @@ class UniGONet(nn.Module):
             Refiner(self.lookback, self.horizon, self.feature_dim, self.sr_hid_dim, self.dropout) 
             for _ in range(self.k)
         ])
-
+        self.mlp_refine = nn.Sequential(
+            nn.Linear(self.horizon, self.sr_hid_dim),
+            nn.ReLU(),
+            nn.Dropout(self.dropout),
+            nn.Linear(self.sr_hid_dim, self.horizon),
+            nn.Sigmoid()
+        )
     def forward(self, batch, isolate=False):
         """
         Forward pass of MogoNet.
@@ -359,10 +365,12 @@ class UniGONet(nn.Module):
                     Y_refine[:, cluster_nodes, :] = refined_output
         else:
             Y_refine = Y_coarse
+            
+        Y_refine = self.mlp_refine(Y_refine.permute(1, 0, 2).squeeze(-1))
         if self.other_loss:
-            return Y_refine.permute(1, 0, 2).squeeze(-1), batch.y , assignment_matrix, backbone, adj, # Y_supernode , Y_coarse, x, supernode_embeddings
+            return Y_refine, batch.y , assignment_matrix, backbone, adj, # Y_supernode , Y_coarse, x, supernode_embeddings
         else:
-            return Y_refine.permute(1, 0, 2).squeeze(-1), batch.y # , assignment_matrix, backbone, adj, # Y_supernode , Y_coarse, x, supernode_embeddings
+            return Y_refine, batch.y # , assignment_matrix, backbone, adj, # Y_supernode , Y_coarse, x, supernode_embeddings
     
     
     def loss(self, pred, target, *args):
