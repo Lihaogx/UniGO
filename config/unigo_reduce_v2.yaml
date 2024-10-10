@@ -48,7 +48,7 @@ model:
   pool_type: sag
   method: euler
   k: 3
-  refine: true
+  refine: shape
   other_loss: false
   rg: 1
   onehot: 1

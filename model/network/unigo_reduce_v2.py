@@ -14,7 +14,7 @@ class Refiner(nn.Module):
         self.dropout = dropout
         # 处理 X 的 MLP
         self.mlp_X = nn.Sequential(
-            nn.Linear(lookback, hid_dim),
+            nn.Linear(hid_dim, hid_dim),
             nn.Tanh(),
             nn.Dropout(dropout)
         )
@@ -103,11 +103,11 @@ class UniGONet_ReduceV2(nn.Module):
         self.tspan = torch.linspace(start_t, end_t, self.horizon)
         # 定义池化层，输入维度为 lookback
         if self.pool_type == 'sag':
-            self.pool = SAGPooling(self.lookback, ratio=self.pool_ratio)
+            self.pool = SAGPooling(self.sr_hid_dim, ratio=self.pool_ratio)
         elif self.pool_type == 'topk':
-            self.pool = TopKPooling(self.lookback, ratio=self.pool_ratio)
+            self.pool = TopKPooling(self.sr_hid_dim, ratio=self.pool_ratio)
         elif self.pool_type == 'asa':
-            self.pool = ASAPooling(self.lookback, ratio=self.pool_ratio)
+            self.pool = ASAPooling(self.sr_hid_dim, ratio=self.pool_ratio)
         # elif self.pool_type == 'pan':
         #     self.pool = PANPooling(self.lookback, ratio=self.pool_ratio)
         # elif self.pool_type == 'mem':
@@ -157,6 +157,8 @@ class UniGONet_ReduceV2(nn.Module):
             for _ in range(self.k)
         ])
         
+        self.shaped_refiner = Refiner(self.lookback, self.horizon, self.sr_hid_dim, self.dropout)
+        
         # 定义精炼MLP
         self.mlp_refine = nn.Sequential(
             nn.Linear(self.horizon, self.sr_hid_dim),
@@ -197,15 +199,15 @@ class UniGONet_ReduceV2(nn.Module):
         adj = adj + adj.t()  # 确保对称性
         # adj.fill_diagonal_(1)  # 添加自环
 
-        # 步骤3：池化操作
-        pooled_x, pooled_edge_index, pooled_edge_attr, pooled_batch, perm, score = self.pool(x, edge_index, edge_attr=None, batch=batch.batch)  # pooled_x: [num_supernodes, lookback]
-        num_supernodes = pooled_x.size(0)
-        # 步骤4：表征网络
         node_repr = self.repr_net_x(x)  # [num_nodes, ag_hid_dim]
-        supernode_repr = self.repr_net_super(pooled_x)  # [num_supernodes, ag_hid_dim]
+        agc_repr = self.graphsage(node_repr, edge_index)
+        agc_repr = self.tanh(agc_repr)
+        # 步骤3：池化操作
+        supernode_repr, pooled_edge_index, pooled_edge_attr, pooled_batch, perm, score = self.pool(agc_repr, edge_index, edge_attr=None, batch=batch.batch)  # pooled_x: [num_supernodes, lookback]
+        # 步骤4：表征网络
         
         # 计算节点表示与超节点表示的相似度
-        assignment_matrix = self.assignment_matrix(node_repr, supernode_repr, batch.batch, pooled_batch)
+        assignment_matrix = self.assignment_matrix(agc_repr, supernode_repr, batch.batch, pooled_batch)
 
         # 计算超节点邻接矩阵
         temp = torch.matmul(adj, assignment_matrix)  # [num_nodes, num_supernodes]
@@ -213,44 +215,45 @@ class UniGONet_ReduceV2(nn.Module):
 
         # 步骤5：状态聚合
         # 使用GraphSAGE层进行消息传递
-        agc_repr = self.graphsage(node_repr, edge_index)  # [num_nodes, lookback]
-        
-        # 应用激活函数
-        agc_repr = self.tanh(agc_repr)
+          # [num_nodes, lookback]
+
 
         # 使用分配矩阵得到超节点嵌入
-        supernode_embeddings = torch.matmul(assignment_matrix.transpose(0, 1), agc_repr)  # [num_supernodes, ag_hid_dim]
+        # supernode_embeddings = torch.matmul(assignment_matrix.transpose(0, 1), agc_repr)  # [num_supernodes, ag_hid_dim]
 
         # 步骤6：主干动力学
         # 根据backbone生成edge_index
         backbone_edge_index = (backbone > 0).nonzero().t()
-        Y_supernode = self.Backbone(supernode_embeddings, backbone_edge_index)  # [horizon, num_supernodes]
+        Y_supernode = self.Backbone(supernode_repr, backbone_edge_index)  # [horizon, num_supernodes]
 
         # 步骤7：映射回原始节点
         Y_coarse = torch.matmul(assignment_matrix, Y_supernode)  # [horizon, num_nodes]
 
         if self.refine:
-            Y_refine = torch.zeros_like(Y_coarse)  # [horizon, num_nodes]
-            if isolate:
-                Y_coarse = Y_coarse.detach()
+            if self.refine == 'shape':
+                Y_refine = self.shaped_refiner(agc_repr, Y_coarse)
+            else:
+                Y_refine = torch.zeros_like(Y_coarse)  # [horizon, num_nodes]
+                if isolate:
+                    Y_coarse = Y_coarse.detach()
 
-            # 使用 Refiner 精炼预测
-            num_clusters = len(torch.unique_consecutive(cluster_ptr)) - 1  # len(self.refiners)
-            
-            for k in range(num_clusters):
-                start = cluster_ptr[k]
-                end = cluster_ptr[k + 1]
-                cluster_nodes = cluster_node_indices[start:end]  # 获取簇 k 的节点索引
+                # 使用 Refiner 精炼预测
+                num_clusters = len(torch.unique_consecutive(cluster_ptr)) - 1  # len(self.refiners)
+                
+                for k in range(num_clusters):
+                    start = cluster_ptr[k]
+                    end = cluster_ptr[k + 1]
+                    cluster_nodes = cluster_node_indices[start:end]  # 获取簇 k 的节点索引
 
-                if cluster_nodes.numel() == 0:
-                    continue
-                else:
-                    cluster_X = x[cluster_nodes, :]  # [cluster_nodes, lookback]
-                    cluster_Y_coarse = Y_coarse[cluster_nodes, :]  # [cluster_nodes, horizon]
-                    # 使用对应的 refiner 对簇内的节点进行精炼预测
-                    refined_output = self.refiners[k](cluster_X, cluster_Y_coarse)  # [horizon, cluster_nodes]
-                    # 将精炼的预测结果写回 Y_refine
-                    Y_refine[cluster_nodes, : ] = refined_output
+                    if cluster_nodes.numel() == 0:
+                        continue
+                    else:
+                        cluster_X = agc_repr[cluster_nodes, :]  # [cluster_nodes, lookback]
+                        cluster_Y_coarse = Y_coarse[cluster_nodes, :]  # [cluster_nodes, horizon]
+                        # 使用对应的 refiner 对簇内的节点进行精炼预测
+                        refined_output = self.refiners[k](cluster_X, cluster_Y_coarse)  # [horizon, cluster_nodes]
+                        # 将精炼的预测结果写回 Y_refine
+                        Y_refine[cluster_nodes, : ] = refined_output
         else:
             Y_refine = Y_coarse
             
