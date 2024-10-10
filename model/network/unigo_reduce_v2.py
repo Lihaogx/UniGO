@@ -60,9 +60,9 @@ class GraphSAGEBackbone(nn.Module):
     def __init__(self, input_dim, hidden_dim, output_dim, num_layers):
         super(GraphSAGEBackbone, self).__init__()
         self.layers = nn.ModuleList()
-        self.layers.append(SAGEConv(input_dim, hidden_dim))
+        self.layers.append(SAGEConv(input_dim, hidden_dim, aggr='lstm'))
         for _ in range(num_layers - 2):
-            self.layers.append(SAGEConv(hidden_dim, hidden_dim))
+            self.layers.append(SAGEConv(hidden_dim, hidden_dim, aggr='lstm'))
         self.layers.append(SAGEConv(hidden_dim, output_dim))
         self.num_layers = num_layers
 
