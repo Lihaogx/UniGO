@@ -6,6 +6,17 @@ import torchdiffeq as ode
 
 
 
+def sort_edge_index(edge_index):
+    # 确保 edge_index 是正确的形状
+    if edge_index.dim() == 1:
+        edge_index = edge_index.view(1, -1).repeat(2, 1)
+    elif edge_index.dim() != 2 or edge_index.size(0) != 2:
+        raise ValueError(f"edge_index should have shape [2, num_edges], but got {edge_index.shape}")
+    
+    # 按目标节点（第二行）排序
+    _, perm = edge_index[1].sort()
+    return edge_index[:, perm]
+
 class Refiner(nn.Module):
     def __init__(self, lookback, horizon, hid_dim, dropout):
         super(Refiner, self).__init__()
@@ -63,13 +74,19 @@ class GraphSAGEBackbone(nn.Module):
         self.layers.append(SAGEConv(input_dim, hidden_dim, aggr='lstm'))
         for _ in range(num_layers - 2):
             self.layers.append(SAGEConv(hidden_dim, hidden_dim, aggr='lstm'))
-        self.layers.append(SAGEConv(hidden_dim, output_dim))
+        self.layers.append(SAGEConv(hidden_dim, output_dim, aggr='mean'))  # 最后一层使用 mean 聚合
         self.num_layers = num_layers
 
     def forward(self, x, edge_index):
-        for i in range(self.num_layers - 1):
-            x = F.relu(self.layers[i](x, edge_index))
-        x = self.layers[-1](x, edge_index)
+        
+        if x.shape[0] == 0 or edge_index.shape[1] == 0:
+            raise ValueError("Empty input tensor or edge_index")
+        edge_index = sort_edge_index(edge_index)
+        for i in range(self.num_layers):
+            x = self.layers[i](x, edge_index)
+            if i < self.num_layers - 1:
+                x = F.relu(x)
+        
         return x
 
 
@@ -263,9 +280,8 @@ class UniGONet_ReduceV2(nn.Module):
             return Y_refine, batch.y , assignment_matrix, backbone, adj, # Y_supernode , Y_coarse, x, supernode_embeddings
         else:
             return Y_refine, batch.y # assignment_matrix, backbone, adj, # Y_supernode , Y_coarse, x, supernode_embeddings
-    
         
-        
+            
     def assignment_matrix(self, node_repr, supernode_repr, batch, pooled_batch):
         """
         构建全局的分配矩阵，将原始节点映射到池化后的节点（超节点）。
@@ -298,30 +314,40 @@ class UniGONet_ReduceV2(nn.Module):
         total_num_nodes = node_repr.size(0)
         total_num_supernodes = supernode_repr.size(0)
 
+
         # 初始化稠密分配矩阵
         assignment_matrix = torch.zeros((total_num_nodes, total_num_supernodes), device=device)
 
-        # 遍历每个子图，构建分配矩阵
+        start_node = 0
+        start_supernode = 0
+
         for graph_id in unique_batches:
-            # 获取当前子图的节点和超节点索引
+            
             node_mask = (node_batch == graph_id)
             supernode_mask = (supernode_batch == graph_id)
 
             node_repr_sub = node_repr[node_mask]
             supernode_repr_sub = supernode_repr[supernode_mask]
 
-            # 如果当前子图没有超节点，跳过
-            if supernode_repr_sub.size(0) == 0:
+            num_nodes = node_repr_sub.shape[0]
+            num_supernodes = supernode_repr_sub.shape[0]
+
+            if num_supernodes == 0:
+                start_node += num_nodes
                 continue
 
-            # 计算相似度矩阵
             similarity_sub = torch.matmul(node_repr_sub, supernode_repr_sub.t())
 
-            # 计算分配矩阵
             assignment_matrix_sub = F.softmax(similarity_sub, dim=1)
 
-            # 将子图的分配矩阵填充到全局分配矩阵中
-            assignment_matrix[node_mask][:, supernode_mask] = assignment_matrix_sub
+            # 使用切片直接赋值，而不是使用掩码
+            assignment_matrix[start_node:start_node+num_nodes, start_supernode:start_supernode+num_supernodes] = assignment_matrix_sub
+
+            # 检查赋值是否成功
+            assigned_submatrix = assignment_matrix[start_node:start_node+num_nodes, start_supernode:start_supernode+num_supernodes]
+
+            start_node += num_nodes
+            start_supernode += num_supernodes
 
         return assignment_matrix
         
