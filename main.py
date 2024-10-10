@@ -180,7 +180,7 @@ def main(args):
             nni.report_final_result(trainer.callback_metrics["test_mse"].item())
             # nni.report_final_result(trainer.callback_metrics["test_wasserstein_distance"].item())
             # 保存结果
-            result_file = f'{args.result_dir}/{args.data.task_type}/{args.data.name}_{args.model.pool_type}/{current_time_str}.csv'
+            result_file = f'{args.result_dir}/{args.data.task_type}_{args.model_type}/{args.data.name}_{args.model.pool_type}/{current_time_str}.csv'
             save_all_results_to_csv(all_results, result_file)
         
         elif args.data.task_type == 'real-data-testing':
@@ -216,7 +216,7 @@ def main(args):
                 
             nni.report_final_result(trainer.callback_metrics["val_mse"].item())
             # 保存测试结果
-            result_file = f'{args.result_dir}/{args.data.task_type}/{args.model.layer_type}/test_{args.data.name}_{args.model.layers}_{args.model.order}_{args.model.cluster_type}.csv'
+            result_file = f'{args.result_dir}/{args.data.task_type}_{args.model_type}/{args.model.layer_type}/test_{args.data.name}_{args.model.layers}_{args.model.order}_{args.model.cluster_type}.csv'
             save_all_results_to_csv(all_results, result_file)
         
         else:

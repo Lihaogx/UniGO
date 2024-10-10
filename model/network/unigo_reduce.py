@@ -188,7 +188,15 @@ class UniGONet_Reduce(nn.Module):
             Refiner(self.lookback, self.horizon, self.sr_hid_dim, self.dropout) 
             for _ in range(self.k)
         ])
-
+        
+        # 定义精炼MLP
+        self.mlp_refine = nn.Sequential(
+            nn.Linear(self.horizon, self.sr_hid_dim),
+            nn.ReLU(),
+            nn.Dropout(self.dropout),
+            nn.Linear(self.sr_hid_dim, self.horizon),
+            nn.Sigmoid()
+        )
 
     def forward(self, batch, isolate=False):
         """
@@ -275,6 +283,9 @@ class UniGONet_Reduce(nn.Module):
                     Y_refine[cluster_nodes, : ] = refined_output
         else:
             Y_refine = Y_coarse
+            
+            
+        Y_refine = self.mlp_refine(Y_refine)
         if self.other_loss:
             return Y_refine, batch.y , assignment_matrix, backbone, adj, # Y_supernode , Y_coarse, x, supernode_embeddings
         else:

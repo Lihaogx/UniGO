@@ -1,5 +1,5 @@
 {
-  "pool_ratio": {"_type": "choice", "_value": [0.1, 0.2, 0.3]},
+  "pool_ratio": {"_type": "choice", "_value": [0.005, 0.01, 0.05, 0.1]},
   "lr": {"_type": "loguniform", "_value": [1e-5, 1e-2]},
-  "hid_dim": {"_type": "choice", "_value": [16]}  
+  "hid_dim": {"_type": "choice", "_value": [4, 8, 16]}
 }

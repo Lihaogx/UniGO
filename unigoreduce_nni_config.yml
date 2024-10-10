@@ -3,7 +3,7 @@ trialConcurrency: 4  # 根据您的GPU数量设置
 maxExperimentDuration: 96h
 maxTrialNumber: 200
 # maxTrialNumPerGpu: 1
-searchSpaceFile: unigo_search_space.json
+searchSpaceFile: unigoreduce_search_space.json
 trialCommand: python main.py --config config/unigo_reduce.yaml
 trialCodeDirectory: .
 trialGpuNumber: 1  # 每个试验只使用1张GPU
