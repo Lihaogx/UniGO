@@ -3,6 +3,9 @@ results/
 logger/
 ckpt/
 model/__pycache__
+model/network/__pycache__
+model/metric/__pycache__
+model/loss/__pycache__
 /__pycache__
 .vscode/
 /data/raw_data
