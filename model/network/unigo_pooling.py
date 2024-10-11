@@ -6,17 +6,6 @@ import torchdiffeq as ode
 
 
 
-def sort_edge_index(edge_index):
-    # 确保 edge_index 是正确的形状
-    if edge_index.dim() == 1:
-        edge_index = edge_index.view(1, -1).repeat(2, 1)
-    elif edge_index.dim() != 2 or edge_index.size(0) != 2:
-        raise ValueError(f"edge_index should have shape [2, num_edges], but got {edge_index.shape}")
-    
-    # 按目标节点（第二行）排序
-    _, perm = edge_index[1].sort()
-    return edge_index[:, perm]
-
 class Refiner(nn.Module):
     def __init__(self, lookback, horizon, hid_dim, dropout):
         super(Refiner, self).__init__()
@@ -78,21 +67,15 @@ class GraphSAGEBackbone(nn.Module):
         self.num_layers = num_layers
 
     def forward(self, x, edge_index):
-        
-        if x.shape[0] == 0 or edge_index.shape[1] == 0:
-            raise ValueError("Empty input tensor or edge_index")
-        edge_index = sort_edge_index(edge_index)
-        for i in range(self.num_layers):
-            x = self.layers[i](x, edge_index)
-            if i < self.num_layers - 1:
-                x = F.relu(x)
-        
+        for i in range(self.num_layers - 1):
+            x = F.relu(self.layers[i](x, edge_index))
+        x = self.layers[-1](x, edge_index)
         return x
 
 
-class UniGONet_ReduceV2(nn.Module):
+class UniGONet_Pooling(nn.Module):
     def __init__(self, args):
-        super(UniGONet_ReduceV2, self).__init__()
+        super(UniGONet_Pooling, self).__init__()
         self.args = args
         self.model_args = self.args.model
         self.feature_dim = self.model_args.feature_dim
@@ -116,6 +99,7 @@ class UniGONet_ReduceV2(nn.Module):
         self.dropout = self.model_args.dropout
         self.kernel_size = self.model_args.kernel_size
         self.num_layers = self.model_args.num_layers
+        self.num_clusters = self.model_args.num_clusters
         start_t = (self.lookback) * self.dt
         end_t = (self.lookback + self.horizon - 1) * self.dt
         self.tspan = torch.linspace(start_t, end_t, self.horizon)
@@ -130,12 +114,12 @@ class UniGONet_ReduceV2(nn.Module):
             self.pool = PANPooling(self.lookback, ratio=self.pool_ratio)
         elif self.pool_type == 'mem':
             self.pool = MemPooling(
-                        in_channels=self.lookback,  # 假设 lookback 对应输入通道数
-                        out_channels=self.lookback,  # 输出通道数，可以根据需要调整
-                        heads=1,  # 头的数量，可以根据需要调整
-                        num_clusters=int(self.lookback * self.pool_ratio),  # 使用 pool_ratio 来确定聚类数
-                        tau=1.0  # 温度参数，可以根据需要调整
-                    )
+                in_channels=self.ag_hid_dim,
+                out_channels=self.ag_hid_dim,
+                heads=4,  # 根据需求调整
+                num_clusters=self.num_clusters,  # 根据需求调整
+                tau=1.0
+            )
         else:
             raise ValueError(f"Unsupported pooling type: {self.pool_type}")
 
@@ -216,16 +200,15 @@ class UniGONet_ReduceV2(nn.Module):
         adj[edge_index[0], edge_index[1]] = 1
         adj = adj + adj.t()  # 确保对称性
         # adj.fill_diagonal_(1)  # 添加自环
-
+        
+        
+        
         node_repr = self.repr_net_x(x)  # [num_nodes, ag_hid_dim]
         agc_repr = self.graphsage(node_repr, edge_index)
         agc_repr = self.tanh(agc_repr)
-        # 步骤3：池化操作
-        supernode_repr, pooled_edge_index, pooled_edge_attr, pooled_batch, perm, score = self.pool(agc_repr, edge_index, edge_attr=None, batch=batch.batch)  # pooled_x: [num_supernodes, lookback]
-        # 步骤4：表征网络
-        
-        # 计算节点表示与超节点表示的相似度
-        assignment_matrix = self.assignment_matrix(agc_repr, supernode_repr, batch.batch, pooled_batch)
+        pooled_x, S = self.pool(x, batch.batch)
+        supernode_repr = self.repr_net_super(pooled_x)
+        assignment_matrix = S
 
         # 计算超节点邻接矩阵
         temp = torch.matmul(adj, assignment_matrix)  # [num_nodes, num_supernodes]
@@ -241,7 +224,7 @@ class UniGONet_ReduceV2(nn.Module):
 
         # 步骤6：主干动力学
         # 根据backbone生成edge_index
-        backbone_edge_index = (backbone > 0).nonzero().t()
+        backbone_edge_index = backbone.nonzero().t()
         Y_supernode = self.Backbone(supernode_repr, backbone_edge_index)  # [horizon, num_supernodes]
 
         # 步骤7：映射回原始节点
@@ -281,8 +264,9 @@ class UniGONet_ReduceV2(nn.Module):
             return Y_refine, batch.y , assignment_matrix, backbone, adj, # Y_supernode , Y_coarse, x, supernode_embeddings
         else:
             return Y_refine, batch.y # assignment_matrix, backbone, adj, # Y_supernode , Y_coarse, x, supernode_embeddings
+    
         
-            
+        
     def assignment_matrix(self, node_repr, supernode_repr, batch, pooled_batch):
         """
         构建全局的分配矩阵，将原始节点映射到池化后的节点（超节点）。

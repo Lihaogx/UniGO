@@ -104,7 +104,12 @@ def main(args):
         args.model.pool_ratio = params.get('pool_ratio', args.model.pool_ratio)
         args.model.kernel_size = params.get('kernel_size', args.model.kernel_size)
         args.model.num_layers = params.get('num_layers', args.model.num_layers)
-        args.model.refine = params.get('num_layers', args.model.refine)
+        args.model.refine = params.get('refine', args.model.refine)
+    elif args.model_type == 'unigo_pooling':
+        args.model.pool_ratio = params.get('pool_ratio', args.model.pool_ratio)
+        args.model.num_clusters = params.get('num_clusters', args.model.num_clusters)
+        args.model.num_layers = params.get('num_layers', args.model.num_layers)
+        args.model.refine = params.get('refine', args.model.refine)
     elif args.model_type in ['unigo', 'unigo_sage']:
         args.model.pool_ratio = params.get('pool_ratio', args.model.pool_ratio)
         args.model.dt = params.get('dt', args.model.dt)
