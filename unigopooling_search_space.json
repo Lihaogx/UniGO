@@ -4,6 +4,6 @@
   "hid_dim": {"_type": "choice", "_value": [8,16]},
   "kernel_size": {"_type": "choice", "_value": [2]},
   "num_layers": {"_type": "choice", "_value": [2, 3, 4, 5, 6]},
-  "refine": {"_type": "choice", "_value": ["false"]},
+  "refine": {"_type": "choice", "_value": ["true", "shape", "false"]},
   "num_clusters": {"_type": "choice", "_value": [10, 20, 30, 40, 50]}
 }

@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import GCNConv, SAGPooling, TopKPooling, EdgePooling, ASAPooling, PANPooling, MemPooling,SAGEConv
 import torchdiffeq as ode
-
+from typing import Optional
 
 
 class Refiner(nn.Module):
@@ -131,7 +131,7 @@ class UniGONet_Pooling(nn.Module):
             nn.LayerNorm(self.ag_hid_dim),
         )
         self.repr_net_super = nn.Sequential(
-            nn.Linear(self.lookback, self.ag_hid_dim),
+            nn.Linear(self.ag_hid_dim, self.ag_hid_dim),
             nn.Tanh(),
             nn.Dropout(self.dropout),
             nn.LayerNorm(self.ag_hid_dim),
@@ -206,9 +206,12 @@ class UniGONet_Pooling(nn.Module):
         node_repr = self.repr_net_x(x)  # [num_nodes, ag_hid_dim]
         agc_repr = self.graphsage(node_repr, edge_index)
         agc_repr = self.tanh(agc_repr)
-        pooled_x, S = self.pool(x, batch.batch)
+        pooled_x, S = self.pool(agc_repr, batch.batch)
+        # 将 pooled_x 的前两个维度合并
+        batch_size, num_supernode, dim = pooled_x.shape
+        pooled_x = pooled_x.reshape(-1, dim)  # [batch_size * num_supernode, dim]
         supernode_repr = self.repr_net_super(pooled_x)
-        assignment_matrix = S
+        assignment_matrix = self.reshape_assignment_matrix(S, batch.batch, self.pool.num_clusters, mask=None)  # [num_nodes_total, super_nodes]
 
         # 计算超节点邻接矩阵
         temp = torch.matmul(adj, assignment_matrix)  # [num_nodes, num_supernodes]
@@ -266,73 +269,73 @@ class UniGONet_Pooling(nn.Module):
             return Y_refine, batch.y # assignment_matrix, backbone, adj, # Y_supernode , Y_coarse, x, supernode_embeddings
     
         
-        
-    def assignment_matrix(self, node_repr, supernode_repr, batch, pooled_batch):
-        """
-        构建全局的分配矩阵，将原始节点映射到池化后的节点（超节点）。
-        
-        参数：
-        - node_repr: 原始节点表示，形状为 [num_nodes, feature_dim]
-        - supernode_repr: 池化后的节点表示，形状为 [num_pool_nodes, feature_dim]
-        - batch: 原始节点的 batch 向量，形状为 [num_nodes]
-        - pooled_batch: 池化后节点的 batch 向量，形状为 [num_pool_nodes]
-        
-        返回：
-        - assignment_matrix: 稠密的分配矩阵，形状为 [num_nodes, num_pool_nodes]
-        """
-        device = node_repr.device
-        
-        # 获取批次中的唯一图索引
-        unique_batches = batch.unique()
-
-        # 将节点和池化节点按照 batch 排序，以确保顺序一致
-        batch_sorted_indices = batch.argsort()
-        pool_batch_sorted_indices = pooled_batch.argsort()
-
-        node_repr = node_repr[batch_sorted_indices]
-        node_batch = batch[batch_sorted_indices]
-
-        supernode_repr = supernode_repr[pool_batch_sorted_indices]
-        supernode_batch = pooled_batch[pool_batch_sorted_indices]
-
-        # 初始化总的节点和超节点数量
-        total_num_nodes = node_repr.size(0)
-        total_num_supernodes = supernode_repr.size(0)
-
-
-        # 初始化稠密分配矩阵
-        assignment_matrix = torch.zeros((total_num_nodes, total_num_supernodes), device=device)
-
-        start_node = 0
-        start_supernode = 0
-
-        for graph_id in unique_batches:
             
-            node_mask = (node_batch == graph_id)
-            supernode_mask = (supernode_batch == graph_id)
+    
+    def reshape_assignment_matrix(
+        self,
+        S: torch.Tensor, 
+        batch: torch.Tensor, 
+        num_clusters: int, 
+        mask: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
+        """
+        将 MemPooling 的 assignment_matrix 从 [batch_size, max_num_nodes, num_clusters]
+        重塑为 [num_nodes_total, super_nodes]，其中 super_nodes = batch_size * num_clusters。
+        
+        Args:
+            S (torch.Tensor): 形状为 [batch_size, max_num_nodes, num_clusters] 的分配矩阵。
+            batch (torch.Tensor): 形状为 [num_nodes_total] 的批次向量，指示每个节点所属的图。
+            num_clusters (int): 每个图的簇数。
+            mask (torch.Tensor, optional): 形状为 [batch_size, max_num_nodes] 的掩码矩阵，
+                                        指示每个节点是否有效。默认情况下，假设所有节点都是有效的。
+        
+        Returns:
+            torch.Tensor: 形状为 [num_nodes_total, super_nodes] 的全局分配矩阵。
+        """
+        batch_size, max_num_nodes, K = S.size()
+        device = S.device
+        super_nodes = batch_size * num_clusters
+        num_nodes_total = batch.size(0)
 
-            node_repr_sub = node_repr[node_mask]
-            supernode_repr_sub = supernode_repr[supernode_mask]
+        # 如果 mask 未提供，计算每个图的节点数量并生成 mask
+        if mask is None:
+            # 计算每个图的节点数量
+            counts = torch.bincount(batch, minlength=batch_size)  # [batch_size]
+            # 初始化 mask
+            mask = torch.zeros((batch_size, max_num_nodes), dtype=torch.bool, device=device)
+            # 填充 mask
+            for b in range(batch_size):
+                num_nodes_b = counts[b].item()
+                if num_nodes_b > max_num_nodes:
+                    raise ValueError(f"Graph {b} has {num_nodes_b} nodes, which exceeds max_num_nodes {max_num_nodes}")
+                mask[b, :num_nodes_b] = 1
+        else:
+            # 如果 mask 已提供，计算 counts
+            counts = mask.sum(dim=1)  # [batch_size]
 
-            num_nodes = node_repr_sub.shape[0]
-            num_supernodes = supernode_repr_sub.shape[0]
+        # 初始化全局分配矩阵
+        assignment_matrix = torch.zeros((num_nodes_total, super_nodes), device=device)
 
-            if num_supernodes == 0:
-                start_node += num_nodes
+        # 遍历每个图，将其分配矩阵 S 分配到全局 assignment_matrix
+        for b in range(batch_size):
+            num_nodes_b = counts[b].item()
+            if num_nodes_b == 0:
                 continue
-
-            similarity_sub = torch.matmul(node_repr_sub, supernode_repr_sub.t())
-
-            assignment_matrix_sub = F.softmax(similarity_sub, dim=1)
-
-            # 使用切片直接赋值，而不是使用掩码
-            assignment_matrix[start_node:start_node+num_nodes, start_supernode:start_supernode+num_supernodes] = assignment_matrix_sub
-
-            # 检查赋值是否成功
-            assigned_submatrix = assignment_matrix[start_node:start_node+num_nodes, start_supernode:start_supernode+num_supernodes]
-
-            start_node += num_nodes
-            start_supernode += num_supernodes
+            # 获取图 b 的 S，形状为 [max_num_nodes, num_clusters]
+            S_b = S[b]  # [max_num_nodes, num_clusters]
+            # 根据 mask 过滤无效节点，形状为 [num_nodes_b, num_clusters]
+            S_b_valid = S_b[:num_nodes_b, :]  # [num_nodes_b, num_clusters]
+            # 获取图 b 的节点索引，形状为 [num_nodes_b]
+            node_indices = (batch == b).nonzero(as_tuple=False).squeeze(1)  # [num_nodes_b]
+            # 计算图 b 的 supernode 索引，形状为 [num_clusters]
+            supernode_start = b * num_clusters
+            supernode_end = (b + 1) * num_clusters
+            supernode_indices = torch.arange(supernode_start, supernode_end, device=device)  # [num_clusters]
+            # 使用高级索引将 S_b_valid 分配到 assignment_matrix
+            # node_indices.unsqueeze(1): [num_nodes_b, 1]
+            # supernode_indices.unsqueeze(0): [1, num_clusters]
+            # assignment_matrix[node_indices.unsqueeze(1), supernode_indices.unsqueeze(0)]: [num_nodes_b, num_clusters]
+            assignment_matrix[node_indices.unsqueeze(1), supernode_indices.unsqueeze(0)] = S_b_valid
 
         return assignment_matrix
         
