@@ -17,11 +17,11 @@ class ODMetrics(Metric):
         num_nodes = preds.size(0)
         horizon = preds.size(1)
         
-        # 计算均方误差（MSE）
+        # Calculate Mean Squared Error (MSE)
         mse = nn.functional.mse_loss(preds, target, reduction='mean')
-        self.mse_sum += mse * num_nodes  # 累加 MSE，总和
+        self.mse_sum += mse * num_nodes  # Accumulate MSE, total sum
         
-        # 计算每个节点的二阶 Wasserstein 距离
+        # Calculate second-order Wasserstein distance for each node
         preds_cpu = preds.detach().cpu()
         target_cpu = target.detach().cpu()
         wd_total = 0.0
@@ -29,10 +29,10 @@ class ODMetrics(Metric):
         for i in range(num_nodes):
             pred_distribution = preds_cpu[i]
             target_distribution = target_cpu[i]
-            # 对分布进行排序
+            # Sort the distributions
             pred_sorted, _ = torch.sort(pred_distribution)
             target_sorted, _ = torch.sort(target_distribution)
-            # 计算平方差
+            # Calculate squared difference
             diff = pred_sorted - target_sorted
             squared_diff = diff.pow(2)
             
@@ -41,7 +41,7 @@ class ODMetrics(Metric):
             if torch.isnan(squared_diff).any():
                 raise ValueError(f"NaN detected in squared_diff at node {i}")
             
-            # 计算二阶 Wasserstein 距离
+            # Calculate second-order Wasserstein distance
             wd_squared = torch.mean(squared_diff)
             wd = torch.sqrt(wd_squared)
             if torch.isnan(wd_squared):
@@ -52,24 +52,24 @@ class ODMetrics(Metric):
             wd_total += wd.item()
         
         average_wd = wd_total / num_nodes
-        self.wasserstein_distance_sum += average_wd * num_nodes  # 累加 Wasserstein 距离，总和
+        self.wasserstein_distance_sum += average_wd * num_nodes  # Accumulate Wasserstein distance, total sum
         
-        # 检查 wasserstein_distance_sum 是否为 NaN
+        # Check if wasserstein_distance_sum is NaN
         if torch.isnan(self.wasserstein_distance_sum):
             raise ValueError(f"NaN detected in wasserstein_distance_sum")
         
         self.total_samples += num_nodes
 
     def compute(self):
-        # 检查 total_samples 是否为 0，防止除以零
+        # Check if total_samples is zero to prevent division by zero
         if self.total_samples == 0:
             raise ValueError(f"Total samples is zero, cannot compute metrics")
         
-        # 返回平均 MSE 和平均 Wasserstein 距离
+        # Return average MSE and average Wasserstein distance
         avg_mse = self.mse_sum / self.total_samples
         avg_wd = self.wasserstein_distance_sum / self.total_samples
         
-        # 检查 avg_wd 是否为 NaN
+        # Check if avg_wd is NaN
         if torch.isnan(avg_wd):
             raise ValueError(f"NaN detected in avg_wd")
         

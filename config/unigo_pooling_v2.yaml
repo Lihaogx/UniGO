@@ -23,14 +23,14 @@ train:
     - 0
   pretrained_ckpt: null
   accelerator: gpu
-  max_epochs: 500
-  min_epochs: 100
+  max_epochs: 20
+  min_epochs: 10
   monitor: val_mse
   devices: 1
   strategy: auto # 'ddp_find_unused_parameters_true'
 optim:
   lr: 0.0001
-  max_epoch: 500
+  max_epoch: 20
   weight_decay: 0.0001
   optimizer: adamw
   lr_scheduler: true
@@ -48,7 +48,7 @@ model:
   pool_type: mem
   method: euler
   k: 3
-  refine: false
+  refine: shape
   other_loss: true
   rg: 1
   onehot: 1

@@ -14,10 +14,8 @@ class FlexibleGNN(nn.Module):
         self.num_layers = self.model_args.num_layers
         self.gnn_type = self.model_args.gnn_type
 
-        # 输入层
         self.input_layer = nn.Linear(self.lookback, self.hidden_dim)
 
-        # GNN层
         self.gnn_layers = nn.ModuleList()
         for _ in range(self.num_layers):
             
@@ -41,21 +39,17 @@ class FlexibleGNN(nn.Module):
             else:
                 raise ValueError(f"Unsupported GNN type: {self.gnn_type}")
 
-        # 输出层
         self.output_layer = nn.Linear(self.hidden_dim, self.horizon)
 
     def forward(self, batch):
         x, edge_index = batch.x, batch.edge_index
 
-        # 输入层
         x = self.input_layer(x)
 
-        # GNN层
         for gnn_layer in self.gnn_layers:
             x = gnn_layer(x, edge_index)
             x = F.relu(x)
 
-        # 输出层
         out = self.output_layer(x)
 
         return out, batch.y  # [num_nodes, horizon]

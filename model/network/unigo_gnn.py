@@ -23,17 +23,17 @@ class Refiner(nn.Module):
         self.lookback = lookback
         self.horizon = horizon
         
-        # 处理 X 的 MLP
+        # MLP for processing X
         self.mlp_X = nn.Sequential(
             nn.Linear(lookback * feature_dim, hid_dim),
             nn.Tanh(),
         )
-        # 处理 Y 的 MLP
+        # MLP for processing Y
         self.mlp_Y = nn.Sequential(
             nn.Linear(horizon * feature_dim, hid_dim),
             nn.Tanh(),
         )
-        # 输出的 MLP
+        # Output MLP
         self.mlp_out = nn.Sequential(
             nn.Linear(hid_dim * 2, hid_dim),
             nn.Tanh(),
@@ -43,35 +43,36 @@ class Refiner(nn.Module):
         
     def forward(self, X, Y):
         """
-        前向传播方法
+        Forward pass method
 
-        参数:
-            X: 输入张量，形状为 [lookback, cluster_nodes, feature_dim]
-            Y: 输入张量，形状为 [horizon, cluster_nodes, feature_dim]
+        Args:
+            X: Input tensor with shape [lookback, cluster_nodes, feature_dim]
+            Y: Input tensor with shape [horizon, cluster_nodes, feature_dim]
         
-        返回:
-            refined_Y: 精炼后的预测，形状为 [horizon, cluster_nodes, feature_dim]
+        Returns:
+            refined_Y: Refined predictions with shape [horizon, cluster_nodes, feature_dim]
         """
-        # 将 X 从 [lookback, cluster_nodes, feature_dim] 转换为 [cluster_nodes, lookback * feature_dim]
+        # Transform X from [lookback, cluster_nodes, feature_dim] to [cluster_nodes, lookback * feature_dim]
         X = X.permute(1, 0, 2).reshape(-1, self.lookback * self.feature_dim)  # [cluster_nodes, lookback * feature_dim]
         
-        # 将 Y 从 [horizon, cluster_nodes, feature_dim] 转换为 [cluster_nodes, horizon * feature_dim]
+        # Transform Y from [horizon, cluster_nodes, feature_dim] to [cluster_nodes, horizon * feature_dim]
         Y = Y.permute(1, 0, 2).reshape(-1, self.horizon * self.feature_dim)  # [cluster_nodes, horizon * feature_dim]
         
-        # 通过各自的 MLP 处理 X 和 Y
+        # Process X and Y through their respective MLPs
         X = self.mlp_X(X)  # [cluster_nodes, hid_dim]
         Y = self.mlp_Y(Y)  # [cluster_nodes, hid_dim]
         
-        # 拼接 X 和 Y 的输出
+        # Concatenate outputs of X and Y
         output = torch.cat([X, Y], dim=-1)  # [cluster_nodes, hid_dim * 2]
         
-        # 通过输出的 MLP 生成精炼后的 Y
+        # Generate refined Y through output MLP
         refined_Y = self.mlp_out(output)  # [cluster_nodes, horizon * feature_dim]
         
-        # 将 refined_Y 从 [cluster_nodes, horizon * feature_dim] 转换为 [horizon, cluster_nodes, feature_dim]
+        # Transform refined_Y from [cluster_nodes, horizon * feature_dim] to [horizon, cluster_nodes, feature_dim]
         refined_Y = refined_Y.reshape(-1, self.horizon, self.feature_dim).permute(1, 0, 2)  # [horizon, cluster_nodes, feature_dim]
         
         return refined_Y
+
 class BackboneGNN(nn.Module):
     def __init__(self, lookback, horizon, num_layers, gnn_type='GCN', feature_dim=1):
         super(BackboneGNN, self).__init__()
@@ -79,20 +80,20 @@ class BackboneGNN(nn.Module):
         self.horizon = horizon
         self.feature_dim = feature_dim
         
-        # GNN网络
+        # GNN network
         self.gnn = nn.ModuleList()
         self.batch_norms = nn.ModuleList()
 
-        # 第一层
+        # First layer
         self.gnn.append(self._get_gnn_layer(lookback * feature_dim, horizon, gnn_type))
         self.batch_norms.append(nn.BatchNorm1d(horizon))
 
-        # 中间层
+        # Middle layers
         for _ in range(num_layers - 2):
             self.gnn.append(self._get_gnn_layer(horizon, horizon, gnn_type))
             self.batch_norms.append(nn.BatchNorm1d(horizon))
 
-        # 最后一层
+        # Last layer
         self.gnn.append(self._get_gnn_layer(horizon, horizon, gnn_type))
 
     def _get_gnn_layer(self, in_dim, out_dim, gnn_type):
@@ -114,33 +115,33 @@ class BackboneGNN(nn.Module):
         elif gnn_type == 'GraphConv':
             return GraphConv(in_dim, out_dim)
         else:
-            raise ValueError(f"不支持的GNN类型: {gnn_type}")
+            raise ValueError(f"Unsupported GNN type: {gnn_type}")
 
     def forward(self, x, edge_index):
         """
-        前向传播方法
+        Forward pass method
 
-        参数:
-            tspan: 时间跨度，用于生成输出序列，形状为 [horizon]
-            x: 输入张量，形状为 [lookback, num_supernodes, feature_dim]
-            edge_index: 边索引，形状为 [2, num_edges]
+        Args:
+            tspan: Time span for generating output sequence, shape [horizon]
+            x: Input tensor with shape [lookback, num_supernodes, feature_dim]
+            edge_index: Edge indices with shape [2, num_edges]
         
-        返回:
-            out: GNN输出序列，形状为 [horizon, num_supernodes, feature_dim]
+        Returns:
+            out: GNN output sequence with shape [horizon, num_supernodes, feature_dim]
         """
         
-        # 1. 转换输入张量的维度
+        # 1. Transform input tensor dimensions
         x = x.permute(1, 0, 2)  # [num_supernodes, lookback, feature_dim]
         x = x.reshape(x.shape[0], -1)  # [num_supernodes, lookback * feature_dim]
         
-        # 2. 使用GNN生成输出序列
+        # 2. Generate output sequence using GNN
         for i, layer in enumerate(self.gnn):
             x = layer(x, edge_index)
-            if i < len(self.gnn) - 1:  # 不对最后一层应用BatchNorm和ReLU
+            if i < len(self.gnn) - 1:  # Don't apply BatchNorm and ReLU to the last layer
                 x = self.batch_norms[i](x)
                 x = F.relu(x)
         
-        # 3. 调整输出维度以匹配预期的形状
+        # 3. Adjust output dimensions to match expected shape
         out = x.unsqueeze(-1)  # [num_supernodes, horizon, 1]
         out = out.permute(1, 0, 2)  # [horizon, num_supernodes, 1]
         
@@ -164,13 +165,14 @@ class UniGONet_GNN(nn.Module):
         self.gnn_layers = self.model_args.num_layers
         self.pool_type = self.model_args.pool_type
         self.method = self.model_args.method
-        self.k = self.model_args.k * self.args.data.batch_size  # 假设 'k' 在 model_args 中定义
+        self.k = self.model_args.k * self.args.data.batch_size  # Assuming 'k' is defined in model_args
         self.dt = self.model_args.dt
         
         start_t = (self.lookback) * self.dt
         end_t = (self.lookback + self.horizon - 1) * self.dt
         self.tspan = torch.linspace(start_t, end_t, self.horizon)
-        # 定义池化层，输入维度为 lookback
+        
+        # Define pooling layer with input dimension lookback
         if self.pool_type == 'sag':
             self.pool = SAGPooling(self.lookback, ratio=self.pool_ratio)
         elif self.pool_type == 'topk':
@@ -180,7 +182,7 @@ class UniGONet_GNN(nn.Module):
         else:
             raise ValueError(f"Unsupported pooling type: {self.pool_type}")
 
-        # 表征网络
+        # Representation network
         self.repr_net_x = nn.Sequential(
             nn.Linear(self.feature_dim, self.ag_hid_dim),
             nn.Tanh(),
@@ -197,7 +199,7 @@ class UniGONet_GNN(nn.Module):
         )
         self.softmax = nn.Softmax(dim=-1)
 
-        # 状态聚合网络
+        # State aggregation network
         self.agc_mlp = nn.Sequential(
             nn.Linear(self.feature_dim, self.ag_hid_dim),
             nn.ReLU(),
@@ -205,10 +207,10 @@ class UniGONet_GNN(nn.Module):
         )
         self.tanh = nn.Tanh()
 
-        # 主干动力学
+        # Backbone dynamics
         self.BackboneGNN = BackboneGNN(self.lookback, self.horizon, self.gnn_layers, self.gnn_type)
 
-        # 精炼层
+        # Refinement layers
         self.refiners = nn.ModuleList([
             Refiner(self.lookback, self.horizon, self.feature_dim, self.sr_hid_dim) 
             for _ in range(self.k)
@@ -229,119 +231,95 @@ class UniGONet_GNN(nn.Module):
             Y_supernode: Supernode predictions [batch_size, horizon, num_supernodes, feature_dim].
             additional_outputs: Tuple containing (Y_coarse, x, supernode_embeddings).
         """
-        # 步骤1：读取数据，不修改维度
+        # Step 1: Read data without modifying dimensions
         x = batch.x  # [num_nodes, lookback]
         edge_index = batch.edge_index  # [2, num_edges]
         cluster_node_indices = batch.cluster_node_indices  # [total_clusters_nodes]
         cluster_ptr = batch.cluster_ptr  # [num_clusters + 1]
 
-        num_nodes = x.size(0)  # 节点数量
-        lookback = x.size(1)  # 时间步数
+        num_nodes = x.size(0)  # Number of nodes
+        lookback = x.size(1)  # Number of time steps
         feature_dim = self.feature_dim  # lookback
 
-        # 步骤2：生成邻接矩阵 adj 从 edge_index
+        # Step 2: Generate adjacency matrix adj from edge_index
         adj = torch.zeros(num_nodes, num_nodes, device=x.device)
         adj[edge_index[0], edge_index[1]] = 1
-        adj = adj + adj.t()  # 确保对称性（无向图）
+        adj = adj + adj.t()  # Ensure symmetry (undirected graph)
 
-        # 计算标准化拉普拉斯矩阵
+        # Calculate normalized Laplacian matrix
         norm_lap = normalized_laplacian(adj)  # [num_nodes, num_nodes]
 
-        # 步骤3：池化操作
+        # Step 3: Pooling operation
         pooled_x = self.pool(x, edge_index)[0]  # pooled_x: [num_supernodes, lookback]
         num_supernodes = pooled_x.size(0)
-        # 步骤4：表征网络
+        
+        # Step 4: Representation network
         x = x.permute(1, 0).unsqueeze(-1)  # [lookback, num_nodes, feature_dim]
         pooled_x = pooled_x.permute(1, 0).unsqueeze(-1)  # [lookback, num_supernodes, feature_dim]
         node_repr = self.repr_net_x(x)  # [lookback, num_nodes, ag_hid_dim]
         supernode_repr = self.repr_net_super(pooled_x)  # [lookback, num_supernodes, ag_hid_dim]
         
-        # 计算节点表示与超节点表示的相似度
+        # Calculate similarity between node representations and supernode representations
         node_repr_flat = node_repr.reshape(num_nodes, lookback * self.ag_hid_dim)          # [num_nodes, lookback * ag_hid_dim]
         supernode_repr_flat = supernode_repr.reshape(num_supernodes, lookback * self.ag_hid_dim)  # [num_supernodes, lookback * ag_hid_dim]
         similarity = torch.matmul(node_repr_flat, supernode_repr_flat.t())  # [num_nodes, num_supernodes]
         assignment_matrix = F.softmax(similarity, dim=1)  # [num_nodes, num_supernodes]
 
-        # 计算超节点邻接矩阵
+        # Calculate supernode adjacency matrix
         adj_mean = adj.mean(dim=0, keepdim=True).expand_as(adj)  # [num_nodes, num_nodes]
         backbone = torch.matmul(assignment_matrix.t(), torch.matmul(adj_mean, assignment_matrix))  # [num_supernodes, num_supernodes]
 
-        # 步骤5：状态聚合
+        # Step 5: State aggregation
         agc_repr = self.tanh(
             self.agc_mlp(
                 torch.matmul(norm_lap, x)
             )
         )  # [lookback, num_nodes, feature_dim]
 
-        # 使用分配矩阵得到超节点嵌入
+        # Get supernode embeddings using assignment matrix
         supernode_embeddings = torch.matmul(assignment_matrix.t(), agc_repr)  # [lookback, num_supernodes, feature_dim]
 
-        # 步骤6：主干动力学
-        # 将邻接矩阵转换为edge_index格式
+        # Step 6: Backbone dynamics
+        # Convert adjacency matrix to edge_index format
         edge_index = torch.nonzero(backbone).t().contiguous()
         Y_supernode = self.BackboneGNN(supernode_embeddings, edge_index)  # [horizon, num_supernodes, feature_dim]
 
-        # 步骤7：映射回原始节点
+        # Step 7: Map back to original nodes
         Y_coarse = torch.matmul(Y_supernode.squeeze(-1), assignment_matrix.t()).unsqueeze(-1)  # [horizon, num_nodes, feature_dim]
 
         Y_refine = torch.zeros_like(Y_coarse)  # [horizon, num_nodes, feature_dim]
         if isolate:
             Y_coarse = Y_coarse.detach()
 
-        # 使用 Refiner 精炼预测
+        # Use Refiner to refine predictions
         num_clusters = len(torch.unique_consecutive(cluster_ptr)) - 1  # len(self.refiners)
         
         for k in range(num_clusters):
             start = cluster_ptr[k]
             end = cluster_ptr[k + 1]
-            cluster_nodes = cluster_node_indices[start:end]  # 获取簇 k 的节点索引
+            cluster_nodes = cluster_node_indices[start:end]  # Get node indices for cluster k
 
             if cluster_nodes.numel() == 0:
                 continue
             else:
                 cluster_X = x[:, cluster_nodes, :]  # [lookback, cluster_nodes, feature_dim]
                 cluster_Y_coarse = Y_coarse[:, cluster_nodes, :]  # [horizon, cluster_nodes, feature_dim]
-                # 使用对应的 refiner 对簇内的节点进行精炼预测
+                # Use corresponding refiner to refine predictions for nodes in the cluster
                 refined_output = self.refiners[k](cluster_X, cluster_Y_coarse)  # [horizon, cluster_nodes, feature_dim]
-                # 将精炼的预测结果写回 Y_refine
+                # Write refined predictions back to Y_refine
                 Y_refine[:, cluster_nodes, :] = refined_output
         
         return Y_refine.permute(1, 0, 2).squeeze(-1), batch.y # , assignment_matrix, backbone, adj, # Y_supernode , Y_coarse, x, supernode_embeddings
     
-    
-    # def loss(self, pred, target, assignment_matrix, supernode_adj, orig_adj):
     def loss(self, pred, target):
-        # 预测损失（MSE）
+        # Prediction loss (MSE)
         pred_loss = F.mse_loss(pred, target)
         
-        # # 重构损失
-        # rg_loss, _ = self._rg_loss(Y_supernode, target, assignment_matrix)
-
-        # # One-hot 损失（鼓励每个节点只属于一个超节点）
-        # onehot_loss = self._onehot_loss(assignment_matrix)
-
-        # # 均匀分布损失（鼓励超节点大小均匀）
-        # uniform_loss = self._uniform_loss(assignment_matrix)
-
-        # # 重构损失（鼓励保持原始图结构）
-        # recons_loss = self._recons_loss(assignment_matrix, orig_adj)
-
-        # # 精炼损失
-        # refine_loss, _ = self._refine_loss(Y_refine, target)
-
-        # 总损失
-        total_loss = (
-            pred_loss 
-            # + self.lambda_rg * rg_loss +
-            # self.lambda_onehot * onehot_loss +
-            # self.lambda_uniform * uniform_loss +
-            # self.lambda_recons * recons_loss +
-            # self.lambda_refine * refine_loss
-        )
+        # Total loss
+        total_loss = pred_loss
 
         return total_loss
 
-    # ... (添加您提供的辅助方法)
     def _agc_state(self, X, assignment_matrix):
         agc_repr = self.tanh(self.agc_mlp(self.norm_lap @ X))
         X_supernode = assignment_matrix @ agc_repr # lookback, supernode_num, feature_dim

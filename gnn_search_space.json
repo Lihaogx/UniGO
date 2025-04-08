@@ -1,7 +1,0 @@
-{
-      "lr": {"_type": "loguniform", "_value": [1e-5, 1e-2]},
-      "hid_dim": {"_type": "choice", "_value": [8, 16, 32]},
-      "gnn_type": {"_type": "choice", "_value": ["GCN", "GAT", "SAGE", "GraphConv", "GIN", "SG"]},
-      "num_layers": {"_type": "choice", "_value": [2, 3, 4, 5, 6, 8]}
-    }
-    

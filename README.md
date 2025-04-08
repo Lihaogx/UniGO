@@ -17,75 +17,35 @@ Please note that `torch_cluster`, `torch_scatter`, and `torch_sparse` required b
 This project provides a method for generating synthetic data. The command to run it is:
 
 ```
-python ./UniGO/data/synthetic_data/od_synthetic_data_generate.py --config ./UniGO/data/data_config/large_degroot.yaml
+python ./UniGO/data/synthetic_data/od_synthetic_data_generate.py
 ```
+In od_synthetic_data_generate.py, we have built-in a parameter grid to control various parameters in the dataset. The dataset parameters are defined in the base_config within the file.
+
+## Real Data Generation
+
+The command to run it is:
+
+```
+python ./UniGO/data/real_data/od_real_data_generate.py
+```
+This code will automatically process the data in ./UniGO/data/raw_data. Note that the raw data needs to be formatted as separate txt files for nodes and opinions.
 
 ## Running Our Example
 
 You can modify the config file to run the model example:
 
 ```
-python main.py --config ./UniGO/config/example.yaml
+python main.py --config ./UniGO/config/unigo_sage.yaml
 ```
+## Citation
 
-The parameters are explained as follows:
+If you find this work useful in your research, please consider citing:
 
-- `result_dir`: results ## Results folder
-- `ckpt_dir`: ckpt ## Checkpoint folder
-- `logger_dir`: logger ## Logger folder
-- `num_threads`: 24
-- `seed`: 1234
-- `num_workers`: 8
-- `repeat`: 10 ## Number of times the experiment is repeated
-- `run_multiple_splits`: []
-- `data`:
-  - `file_path_train`: null ## Automatically handled in the code
-  - `file_path_test`: null ## Automatically handled in the code
-  - `size`: 2000 ## Size of the synthetic dataset
-  - `task_type`: 1 ## Task type: 1 for training on synthetic dataset, 2 for testing pre-trained model on a large synthetic dataset, 3 for testing pre-trained model on real-world dataset
-  - `name`: degroot ## Name of the synthetic dataset
-  - `split`:
-    - 0.7
-    - 0.1
-    - 0.2
-  - `batch_size`: 30
-  - `train_timestep`: 1
-- `train`:
-  - `gpus`:
-    - 0
-  - `pretrained_ckpt`: null ## Load pre-trained model
-  - `accelerator`: gpu
-  - `max_epochs`: 1000
-  - `min_epochs`: 50
-  - `monitor`: val_wasserstein_distance
-- `optim`:
-  - `lr`: 0.01
-  - `max_epoch`: 1000
-  - `weight_decay`: 0.0001
-  - `optimizer`: adamw
-  - `lr_scheduler`: true
-  - `scheduler`: step
-  - `steps`: 100
-- `model`:
-  - `network_type`: mogo
-  - `layer_type`: gcn
-  - `loss_type`: mse
-  - `gamma`: 0.5
-  - `in_dim`: 1
-  - `hidden_dim`: 8
-  - `layers`: 2
-  - `order`: 2
-  - `dropout`: 0.0
-  - `combine_mode`: mean ## Method for combining multi-order information
-  - `force_layer`: 8
-  - `num_class`: 4
-  - `m`: 0.5
-  - `num_node`: 2000
-  - `cluster_type`: 0.01
-
-## Acknowledgements
-
-Open source codes involved in this project:
-
-- pytorch-softdtw: https://github.com/Sleepwalking/pytorch-softdtw
-- Pytorch-Lightning-Template: https://github.com/miracleyoo/pytorch-lightning-template
+```
+@article{li2025unigo,
+  title={UniGO: A Unified Graph Neural Network for Modeling Opinion Dynamics on Graphs},
+  author={Li, Hao and Jiang, Hao and Zheng, Yuke and Sun, Hao and Gong, Wenying},
+  journal={arXiv preprint arXiv:2502.11519},
+  year={2025}
+}
+```

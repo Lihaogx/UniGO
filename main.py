@@ -20,9 +20,6 @@ def load_loggers(logger_dir, current_time_str, seed, run_id):
     ]
     return loggers
 
-import os
-import pytorch_lightning.callbacks as plc
-
 def load_callbacks(ckpt_dir, current_time_str, seed, run_id, type, name):
     ckpt_path = f"{ckpt_dir}/{name}_{type}_{current_time_str}_{seed}_{run_id}"
     if not os.path.exists(ckpt_path):
@@ -152,10 +149,10 @@ def main(args):
         data_module = DInterface(data_config=args.data)
         
         if args.data.task_type == 'pre-training':
-            # 初始化模型，不加载预训练的检查点
+            # Initialize model without loading pretrained checkpoint
             model_module = MInterface(args)
             
-            # 设置训练参数
+            # Set training parameters
             trainer = Trainer(
                 callbacks=callbacks, 
                 logger=loggers, 
@@ -167,10 +164,10 @@ def main(args):
                 enable_checkpointing=True,
             )
 
-            # 训练模型
+            # Train the model
             trainer.fit(model_module, datamodule=data_module)
 
-            # 确定用于测试的最佳检查点
+            # Determine the best checkpoint for testing
             if args.train.monitor == 'val_wasserstein_distance':
                 best_checkpoint_path = callbacks[1].best_model_path
             elif args.train.monitor == 'val_mse':
@@ -178,12 +175,12 @@ def main(args):
             else:
                 raise ValueError("Unsupported monitoring target specified.")
 
-            # 加载最佳模型检查点进行测试
+            # Load the best model checkpoint for testing
             model_module = MInterface.load_from_checkpoint(
                 checkpoint_path=best_checkpoint_path,
                 args=args)
 
-            # 测试模型
+            # Test the model
             test_results = trainer.test(model=model_module, datamodule=data_module)
             
             for result in test_results:
@@ -197,29 +194,28 @@ def main(args):
                 all_results.append(result_entry)
             nni.report_final_result(trainer.callback_metrics["test_mse"].item())
             # nni.report_final_result(trainer.callback_metrics["test_wasserstein_distance"].item())
-            # 保存结果
+            # Save results
             result_file = f'{args.result_dir}/{args.data.task_type}_{args.model_type}/{args.data.name}_{args.model.pool_type}/{current_time_str}.csv'
             save_all_results_to_csv(all_results, result_file)
         
         elif args.data.task_type == 'real-data-testing':
-            # 从预训练的检查点加载模型
+            # Load model from pretrained checkpoint
             model_module = MInterface.load_from_checkpoint(
                 checkpoint_path=initial_ckpt_path,
-                model_config=args.model,
-                optim_config=args.optim
+                args=args
             )
             
-            # 设置测试参数
+            # Set testing parameters
             trainer = Trainer(
                 callbacks=callbacks, 
                 logger=loggers, 
                 accelerator=args.train.accelerator, 
                 devices=args.train.devices, 
                 strategy=args.train.strategy,
-                enable_checkpointing=False,
+                enable_checkpointing=True,
             )
             data_module.setup()
-            # 测试模型
+            # Test the model
             test_results = trainer.test(model=model_module, datamodule=data_module)
             
             for result in test_results:
@@ -232,13 +228,14 @@ def main(args):
                 result_entry.update(result)
                 all_results.append(result_entry)
                 
-            nni.report_final_result(trainer.callback_metrics["val_mse"].item())
-            # 保存测试结果
-            result_file = f'{args.result_dir}/{args.data.task_type}_{args.model_type}/{args.model.layer_type}/test_{args.data.name}_{args.model.layers}_{args.model.order}_{args.model.cluster_type}.csv'
+            nni.report_final_result(trainer.callback_metrics["test_mse"].item())
+            # Save test results
+            result_file = f'{args.result_dir}/{args.data.task_type}_{args.model_type}/{args.data.name}_{args.model.pool_type}/{current_time_str}.csv'
             save_all_results_to_csv(all_results, result_file)
         
         else:
-            raise ValueError(f"未知的 task_type：{args.data.task_type}")
+            raise ValueError(f"Unknown task_type: {args.data.task_type}")
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Process some integers.')
     parser.add_argument('--config', type=str, required=True,

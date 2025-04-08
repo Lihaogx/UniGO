@@ -12,19 +12,19 @@ class Refiner(nn.Module):
         self.lookback = lookback
         self.horizon = horizon
         self.dropout = dropout
-        # 处理 X 的 MLP
+
         self.mlp_X = nn.Sequential(
-            nn.Linear(hid_dim, hid_dim),
+            nn.Linear(lookback, hid_dim),
             nn.Tanh(),
             nn.Dropout(dropout)
         )
-        # 处理 Y 的 MLP
+
         self.mlp_Y = nn.Sequential(
             nn.Linear(horizon, hid_dim),
             nn.Tanh(),
             nn.Dropout(dropout)
         )
-        # 输出的 MLP
+
         self.mlp_out = nn.Sequential(
             nn.Linear(hid_dim * 2, hid_dim),
             nn.Tanh(),
@@ -47,10 +47,10 @@ class Refiner(nn.Module):
         X = self.mlp_X(X)  # [cluster_nodes, hid_dim]
         Y = self.mlp_Y(Y)  # [cluster_nodes, hid_dim]
         
-        # 拼接 X 和 Y 的输出
+
         output = torch.cat([X, Y], dim=-1)  # [cluster_nodes, hid_dim * 2]
         
-        # 通过输出的 MLP 生成精炼后的 Y
+
         refined_Y = self.mlp_out(output)  # [cluster_nodes, horizon]
         
         return refined_Y #  [horizon, cluster_nodes]
@@ -73,9 +73,9 @@ class GraphSAGEBackbone(nn.Module):
         return x
 
 
-class UniGONet_Pooling(nn.Module):
+class UniGONet_PoolingV2(nn.Module):
     def __init__(self, args):
-        super(UniGONet_Pooling, self).__init__()
+        super(UniGONet_PoolingV2, self).__init__()
         self.args = args
         self.model_args = self.args.model
         self.feature_dim = self.model_args.feature_dim
@@ -88,7 +88,7 @@ class UniGONet_Pooling(nn.Module):
         self.pool_type = self.model_args.pool_type
         self.method = self.model_args.method
         
-        self.k = self.model_args.k * self.args.data.batch_size  # 假设 'k' 在 model_args 中定义
+        self.k = self.model_args.k * self.args.data.batch_size  # Assuming 'k' is defined in model_args
         self.dt = self.model_args.dt
         self.refine = self.model_args.refine
         self.other_loss = self.model_args.other_loss
@@ -100,10 +100,12 @@ class UniGONet_Pooling(nn.Module):
         self.kernel_size = self.model_args.kernel_size
         self.num_layers = self.model_args.num_layers
         self.num_clusters = self.model_args.num_clusters
+        self.kl_loss_weight = self.model_args.kl_loss_weight
+        self.kl_loss = self.model_args.kl_loss
         start_t = (self.lookback) * self.dt
         end_t = (self.lookback + self.horizon - 1) * self.dt
         self.tspan = torch.linspace(start_t, end_t, self.horizon)
-        # 定义池化层，输入维度为 lookback
+        # Define pooling layer with input dimension lookback
         if self.pool_type == 'sag':
             self.pool = SAGPooling(self.sr_hid_dim, ratio=self.pool_ratio)
         elif self.pool_type == 'topk':
@@ -116,14 +118,14 @@ class UniGONet_Pooling(nn.Module):
             self.pool = MemPooling(
                 in_channels=self.ag_hid_dim,
                 out_channels=self.ag_hid_dim,
-                heads=4,  # 根据需求调整
-                num_clusters=self.num_clusters,  # 根据需求调整
+                heads=4,  # Adjust based on requirements
+                num_clusters=self.num_clusters,  # Adjust based on requirements
                 tau=1.0
             )
         else:
             raise ValueError(f"Unsupported pooling type: {self.pool_type}")
 
-        # 表征网络
+        # Representation network
         self.repr_net_x = nn.Sequential(
             nn.Linear(self.lookback, self.ag_hid_dim),
             nn.Tanh(),
@@ -138,7 +140,7 @@ class UniGONet_Pooling(nn.Module):
         )
         self.softmax = nn.Softmax(dim=-1)
 
-        # 状态聚合网络
+        # State aggregation network
         self.agc_mlp = nn.Sequential(
             nn.Linear(self.feature_dim, self.ag_hid_dim),
             nn.ReLU(),
@@ -147,13 +149,12 @@ class UniGONet_Pooling(nn.Module):
         )
         self.tanh = nn.Tanh()
 
-        # 定义 GraphSAGE 层
+        # Define GraphSAGE layer
         self.graphsage = SAGEConv(self.ag_hid_dim, self.ag_hid_dim)
-        # 主干动力学
-
+        # Backbone dynamics
 
         self.Backbone = GraphSAGEBackbone(self.ode_hid_dim, self.ode_hid_dim, self.horizon, self.num_layers)
-        # 精炼层
+        # Refinement layer
         self.refiners = nn.ModuleList([
             Refiner(self.lookback, self.horizon, self.sr_hid_dim, self.dropout) 
             for _ in range(self.k)
@@ -161,7 +162,7 @@ class UniGONet_Pooling(nn.Module):
         
         self.shaped_refiner = Refiner(self.lookback, self.horizon, self.sr_hid_dim, self.dropout)
         
-        # 定义精炼MLP
+        # Define refinement MLP
         self.mlp_refine = nn.Sequential(
             nn.Linear(self.horizon, self.sr_hid_dim),
             nn.ReLU(),
@@ -185,21 +186,21 @@ class UniGONet_Pooling(nn.Module):
             Y_supernode: Supernode predictions [batch_size, horizon, num_supernodes, feature_dim].
             additional_outputs: Tuple containing (Y_coarse, x, supernode_embeddings).
         """
-        # 步骤1：读取数据，不修改维度
+        # Step 1: Read data without modifying dimensions
         x = batch.x  # [num_nodes, lookback]
         edge_index = batch.edge_index  # [2, num_edges]
         cluster_node_indices = batch.cluster_node_indices  # [total_clusters_nodes]
         cluster_ptr = batch.cluster_ptr  # [num_clusters + 1]
 
-        num_nodes = x.size(0)  # 节点数量
-        lookback = x.size(1)  # 时间步数
+        num_nodes = x.size(0)  # Number of nodes
+        lookback = x.size(1)  # Number of time steps
         feature_dim = self.feature_dim  # lookback
 
-        # 步骤2：生成邻接矩阵 adj 从 edge_index
+        # Step 2: Generate adjacency matrix adj from edge_index
         adj = torch.zeros((num_nodes, num_nodes), device=x.device)
         adj[edge_index[0], edge_index[1]] = 1
-        adj = adj + adj.t()  # 确保对称性
-        # adj.fill_diagonal_(1)  # 添加自环
+        adj = adj + adj.t()  # Ensure symmetry
+        # adj.fill_diagonal_(1)  # Add self-loops
         
         
         
@@ -235,7 +236,7 @@ class UniGONet_Pooling(nn.Module):
 
         if self.refine:
             if self.refine == 'shape':
-                Y_refine = self.shaped_refiner(agc_repr, Y_coarse)
+                Y_refine = self.shaped_refiner(x, Y_coarse)
             else:
                 Y_refine = torch.zeros_like(Y_coarse)  # [horizon, num_nodes]
                 if isolate:
@@ -252,7 +253,7 @@ class UniGONet_Pooling(nn.Module):
                     if cluster_nodes.numel() == 0:
                         continue
                     else:
-                        cluster_X = agc_repr[cluster_nodes, :]  # [cluster_nodes, lookback]
+                        cluster_X = x[cluster_nodes, :]  # [cluster_nodes, lookback]
                         cluster_Y_coarse = Y_coarse[cluster_nodes, :]  # [cluster_nodes, horizon]
                         # 使用对应的 refiner 对簇内的节点进行精炼预测
                         refined_output = self.refiners[k](cluster_X, cluster_Y_coarse)  # [horizon, cluster_nodes]
@@ -263,8 +264,12 @@ class UniGONet_Pooling(nn.Module):
             
             
         Y_refine = self.mlp_refine(Y_refine)
+
         if self.other_loss:
-            return Y_refine, batch.y , assignment_matrix, backbone, adj, # Y_supernode , Y_coarse, x, supernode_embeddings
+            if self.kl_loss:
+                return Y_refine, batch.y, S, backbone, adj
+            else:
+                return Y_refine, batch.y, assignment_matrix, backbone, adj, # Y_supernode , Y_coarse, x, supernode_embeddings
         else:
             return Y_refine, batch.y # assignment_matrix, backbone, adj, # Y_supernode , Y_coarse, x, supernode_embeddings
     
@@ -279,59 +284,52 @@ class UniGONet_Pooling(nn.Module):
         mask: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         """
-        将 MemPooling 的 assignment_matrix 从 [batch_size, max_num_nodes, num_clusters]
-        重塑为 [num_nodes_total, super_nodes]，其中 super_nodes = batch_size * num_clusters。
+        Reshape the MemPooling assignment_matrix from [batch_size, max_num_nodes, num_clusters]
+        to [num_nodes_total, super_nodes], where super_nodes = batch_size * num_clusters.
         
         Args:
-            S (torch.Tensor): 形状为 [batch_size, max_num_nodes, num_clusters] 的分配矩阵。
-            batch (torch.Tensor): 形状为 [num_nodes_total] 的批次向量，指示每个节点所属的图。
-            num_clusters (int): 每个图的簇数。
-            mask (torch.Tensor, optional): 形状为 [batch_size, max_num_nodes] 的掩码矩阵，
-                                        指示每个节点是否有效。默认情况下，假设所有节点都是有效的。
+            S (torch.Tensor): Assignment matrix of shape [batch_size, max_num_nodes, num_clusters].
+            batch (torch.Tensor): Batch vector of shape [num_nodes_total] indicating which graph each node belongs to.
+            num_clusters (int): Number of clusters per graph.
+            mask (torch.Tensor, optional): Mask matrix of shape [batch_size, max_num_nodes] indicating
+                                         whether each node is valid. By default, all nodes are assumed to be valid.
         
         Returns:
-            torch.Tensor: 形状为 [num_nodes_total, super_nodes] 的全局分配矩阵。
+            torch.Tensor: Global assignment matrix of shape [num_nodes_total, super_nodes].
         """
         batch_size, max_num_nodes, K = S.size()
         device = S.device
         super_nodes = batch_size * num_clusters
         num_nodes_total = batch.size(0)
 
-        # 如果 mask 未提供，计算每个图的节点数量并生成 mask
         if mask is None:
-            # 计算每个图的节点数量
+
             counts = torch.bincount(batch, minlength=batch_size)  # [batch_size]
-            # 初始化 mask
+
             mask = torch.zeros((batch_size, max_num_nodes), dtype=torch.bool, device=device)
-            # 填充 mask
+
             for b in range(batch_size):
                 num_nodes_b = counts[b].item()
                 if num_nodes_b > max_num_nodes:
                     raise ValueError(f"Graph {b} has {num_nodes_b} nodes, which exceeds max_num_nodes {max_num_nodes}")
                 mask[b, :num_nodes_b] = 1
         else:
-            # 如果 mask 已提供，计算 counts
+
             counts = mask.sum(dim=1)  # [batch_size]
 
-        # 初始化全局分配矩阵
+
         assignment_matrix = torch.zeros((num_nodes_total, super_nodes), device=device)
 
-        # 遍历每个图，将其分配矩阵 S 分配到全局 assignment_matrix
         for b in range(batch_size):
             num_nodes_b = counts[b].item()
             if num_nodes_b == 0:
                 continue
-            # 获取图 b 的 S，形状为 [max_num_nodes, num_clusters]
             S_b = S[b]  # [max_num_nodes, num_clusters]
-            # 根据 mask 过滤无效节点，形状为 [num_nodes_b, num_clusters]
             S_b_valid = S_b[:num_nodes_b, :]  # [num_nodes_b, num_clusters]
-            # 获取图 b 的节点索引，形状为 [num_nodes_b]
             node_indices = (batch == b).nonzero(as_tuple=False).squeeze(1)  # [num_nodes_b]
-            # 计算图 b 的 supernode 索引，形状为 [num_clusters]
             supernode_start = b * num_clusters
             supernode_end = (b + 1) * num_clusters
             supernode_indices = torch.arange(supernode_start, supernode_end, device=device)  # [num_clusters]
-            # 使用高级索引将 S_b_valid 分配到 assignment_matrix
             # node_indices.unsqueeze(1): [num_nodes_b, 1]
             # supernode_indices.unsqueeze(0): [1, num_clusters]
             # assignment_matrix[node_indices.unsqueeze(1), supernode_indices.unsqueeze(0)]: [num_nodes_b, num_clusters]
@@ -347,34 +345,36 @@ class UniGONet_Pooling(nn.Module):
         total_loss = pred_loss
 
         if self.other_loss and len(args) >= 3:
-            assignment_matrix, supernode_adj, orig_adj = args[:3]
-            
-            # 重构损失
-            rg_loss, _ = self._rg_loss(args[3], target, assignment_matrix) if len(args) > 3 else (0, None)
-
-            # One-hot 损失（鼓励每个节点只属于一个超节点）
-            onehot_loss = self._onehot_loss(assignment_matrix)
-
-            # 均匀分布损失（鼓励超节点大小均匀）
-            uniform_loss = self._uniform_loss(assignment_matrix)
-
-            # # 重构损失（鼓励保持原始图结构）
-            # recons_loss = self._recons_loss(assignment_matrix, orig_adj)
-            if self.refine:
-                # 精炼损失
-                refine_loss, _ = self._refine_loss(args[4], target) if len(args) > 4 else (0, None)
+            if self.kl_loss:
+                S = args[0]
+                kl_loss = MemPooling.kl_loss(S)
+                total_loss += kl_loss * self.kl_loss_weight
             else:
-                refine_loss = 0
-            total_loss += (
-                self.rg * rg_loss +
-                self.onehot * onehot_loss +
-                self.uniform * uniform_loss +
-                self.refine_loss * refine_loss
-            )
+                assignment_matrix, supernode_adj, orig_adj = args[:3]
+            
+
+                rg_loss, _ = self._rg_loss(args[3], target, assignment_matrix) if len(args) > 3 else (0, None)
+
+
+                onehot_loss = self._onehot_loss(assignment_matrix)
+
+
+                uniform_loss = self._uniform_loss(assignment_matrix)
+
+                # recons_loss = self._recons_loss(assignment_matrix, orig_adj)
+                if self.refine:
+                    refine_loss, _ = self._refine_loss(args[4], target) if len(args) > 4 else (0, None)
+                else:
+                    refine_loss = 0
+                total_loss += (
+                    self.rg * rg_loss +
+                    self.onehot * onehot_loss +
+                    self.uniform * uniform_loss +
+                    self.refine_loss * refine_loss
+                )
 
         return total_loss
 
-    # ... (添加您提供的辅助方法)
     def _agc_state(self, X, assignment_matrix):
         agc_repr = self.tanh(self.agc_mlp(self.norm_lap @ X))
         X_supernode = assignment_matrix @ agc_repr # lookback, supernode_num, feature_dim
