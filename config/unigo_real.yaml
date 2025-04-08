@@ -1,0 +1,58 @@
+result_dir: results
+ckpt_dir: ckpt
+logger_dir: logger
+num_threads: 24
+seed: 1234
+num_workers: 16
+repeat: 1
+run_multiple_splits: []
+model_type: unigo
+data:
+  file_path_train: /home/lh/UniGO/data/real_data/election/data.pt
+  file_path_test: null
+  task_type: real-data-testing
+  split:
+    - 0.7
+    - 0.1
+    - 0.2
+  batch_size: 10
+  ratio: 1
+  name: election
+train:
+  gpus:
+    - 0
+  pretrained_ckpt: null
+  accelerator: gpu
+  max_epochs: 500
+  min_epochs: 100
+  monitor: val_mse
+  devices: 1
+  strategy: auto # 'ddp_find_unused_parameters_true'
+optim:
+  lr: 0.0001
+  max_epoch: 500
+  weight_decay: 0.0001
+  optimizer: adamw
+  lr_scheduler: true
+  scheduler: step
+  steps: 100
+model:
+  dt: 0.1
+  feature_dim: 1
+  lookback: 10
+  horizon: 90
+  pool_ratio: 0.2
+  ag_hid_dim: 16
+  ode_hid_dim: 16
+  sr_hid_dim: 16
+  pool_type: sag
+  method: euler
+  k: 3
+  refine: true
+  other_loss: true
+  rg: 1
+  onehot: 1
+  uniform: 1
+  refine_loss: 1
+  dropout: 0.1
+  

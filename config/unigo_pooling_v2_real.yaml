@@ -1,0 +1,62 @@
+result_dir: results
+ckpt_dir: ckpt
+logger_dir: logger
+num_threads: 24
+seed: 1234
+num_workers: 16
+repeat: 1
+run_multiple_splits: []
+model_type: unigo_poolingv2
+data:
+  file_path_train: null
+  file_path_test: /home/lh/UniGO/data/real_data/delhi/data.pt
+  task_type: real-data-testing
+  split:
+    - 0.7
+    - 0.1
+    - 0.2
+  batch_size: 10
+  ratio: 1
+  name: election
+train:
+  gpus:
+    - 0
+  pretrained_ckpt: /home/lh/UniGO/ckpt/syn_filtered_v2_pre-training_2025-04-08_20-24_1234_1234/best-mse-epoch=19-val_mse=0.016.ckpt
+  accelerator: gpu
+  max_epochs: 20
+  min_epochs: 10
+  monitor: val_mse
+  devices: 1
+  strategy: auto # 'ddp_find_unused_parameters_true'
+optim:
+  lr: 0.0001
+  max_epoch: 20
+  weight_decay: 0.0001
+  optimizer: adamw
+  lr_scheduler: true
+  scheduler: step
+  steps: 100
+model:
+  dt: 0.1
+  feature_dim: 1
+  lookback: 10
+  horizon: 90
+  pool_ratio: 0.2
+  ag_hid_dim: 16
+  ode_hid_dim: 16
+  sr_hid_dim: 16
+  pool_type: mem
+  method: euler
+  k: 3
+  refine: shape
+  other_loss: true
+  rg: 1
+  onehot: 1
+  uniform: 1
+  refine_loss: 1
+  dropout: 0.1
+  kernel_size: 2
+  num_layers: 3
+  num_clusters: 10
+  kl_loss: true
+  kl_loss_weight: 1
