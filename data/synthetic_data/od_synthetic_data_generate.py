@@ -48,7 +48,7 @@ base_config = {
     'horizon': 5,  # Length of y time steps
 }
 # Add project root directory to system path
-sys.path.append('/home/lh/UniGO/')
+sys.path.append('./UniGO/')
 from utils import load_config
 
 def create_graph_with_opinions(n, graph_type='ba', m=2, p=0.1, k=4, seed=None):
@@ -272,7 +272,7 @@ def process_and_save_data(data_item, h5f, idx, k=4):
         gc.collect()
 
 def main(n, graph_type, lookback, horizon, m, p, k, num_graphs, od_model, iteration, epsilon, mu, p_noise, confidence_range, 
-         random_initial_opinion=True, initial_opinions=None, use_real_network=False, real_network_path=None, output_dir="/home/lh/UniGO/data/synthetic_data"):
+         random_initial_opinion=True, initial_opinions=None, use_real_network=False, real_network_path=None, output_dir="./UniGO/data/synthetic_data"):
     """
     Main function to generate data and save directly in HDF5 format
     """
@@ -494,7 +494,7 @@ def process_multiple_configs(param_ranges=None, merge_output=True, merged_file_n
     process_parameter_grid(base_config, param_ranges)
     # If merge is enabled, merge all generated HDF5 files
     if merge_output:
-        output_dir = base_config.get('output_dir', '/home/lh/UniGO/data/synthetic_data')
+        output_dir = base_config.get('output_dir', './UniGO/data/synthetic_data')
         merged_file = os.path.join(output_dir, merged_file_name)
         merge_h5_files(output_dir, merged_file)
 

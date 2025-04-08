@@ -8,7 +8,7 @@ repeat: 1
 run_multiple_splits: []
 model_type: unigo_sage
 data:
-  file_path_train: /home/lh/UniGO/data/synthetic_v2.h5
+  file_path_train: ./UniGO/data/synthetic_v2.h5
   file_path_test: null
   task_type: pre-training
   split:

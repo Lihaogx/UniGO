@@ -20,7 +20,7 @@ import torch.optim.lr_scheduler as lrs
 
 import pytorch_lightning as pl
 import sys
-sys.path.append('/home/lh/UniGO/')
+sys.path.append('./UniGO/')
 from utils import create_optimizer, create_scheduler
 from model.network.gnn import FlexibleGNN
 from model.network.unigo import UniGONet

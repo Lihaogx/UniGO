@@ -11,7 +11,7 @@ model/metric/__pycache__
 model/loss/__pycache__
 /__pycache__
 .vscode/
-/home/lh/UniGO/model/network/gnn.py
+/model/network/gnn.py
 /data/raw_data/*
 !/data/raw_data/delhi
 !/data/raw_data/election

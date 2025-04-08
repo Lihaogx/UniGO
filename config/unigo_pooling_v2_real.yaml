@@ -9,7 +9,7 @@ run_multiple_splits: []
 model_type: unigo_poolingv2
 data:
   file_path_train: null
-  file_path_test: /home/lh/UniGO/data/real_data/delhi/data.pt
+  file_path_test: ./UniGO/data/real_data/delhi/data.pt
   task_type: real-data-testing
   split:
     - 0.7
@@ -21,7 +21,7 @@ data:
 train:
   gpus:
     - 0
-  pretrained_ckpt: /home/lh/UniGO/ckpt/syn_filtered_v2_pre-training_2025-04-08_20-24_1234_1234/best-mse-epoch=19-val_mse=0.016.ckpt
+  pretrained_ckpt: ./UniGO/ckpt/syn_filtered_v2_pre-training_2025-04-08_20-24_1234_1234/best-mse-epoch=19-val_mse=0.016.ckpt
   accelerator: gpu
   max_epochs: 20
   min_epochs: 10

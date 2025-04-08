@@ -8,7 +8,7 @@ repeat: 1
 run_multiple_splits: []
 model_type: unigo
 data:
-  file_path_train: /home/lh/UniGO/data/real_data/election/data.pt
+  file_path_train: ./UniGO/data/real_data/election/data.pt
   file_path_test: null
   task_type: real-data-testing
   split:
