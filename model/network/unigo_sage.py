@@ -124,7 +124,7 @@ class BackboneODE(nn.Module):
         x_neigh = self.g(x) # [num_supernodes, feature_dim]
         dxdt = x_self + x_neigh    # [num_supernodes, feature_dim]
         dxdt = torch.clamp(dxdt, min=-1e3, max=1e3)
-        if torch.isnan(dxdt).any() or torch.isinf(dxdt).any():
+        if torch.isnan(dxdt).any().item() or torch.isinf(dxdt).any().item():
             print(f"NaN or Inf detected in dxdt at t={t}")
             print(f"x_self stats: min={x_self.min().item():.4f}, max={x_self.max().item():.4f}")
             print(f"x_neigh stats: min={x_neigh.min().item():.4f}, max={x_neigh.max().item():.4f}")

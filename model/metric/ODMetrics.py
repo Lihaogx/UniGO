@@ -55,7 +55,7 @@ class ODMetrics(Metric):
         self.wasserstein_distance_sum += average_wd * num_nodes  # Accumulate Wasserstein distance, total sum
         
         # Check if wasserstein_distance_sum is NaN
-        if torch.isnan(self.wasserstein_distance_sum):
+        if torch.isnan(self.wasserstein_distance_sum).item():
             raise ValueError(f"NaN detected in wasserstein_distance_sum")
         
         self.total_samples += num_nodes
@@ -70,7 +70,7 @@ class ODMetrics(Metric):
         avg_wd = self.wasserstein_distance_sum / self.total_samples
         
         # Check if avg_wd is NaN
-        if torch.isnan(avg_wd):
+        if torch.isnan(avg_wd).item():
             raise ValueError(f"NaN detected in avg_wd")
         
         return {

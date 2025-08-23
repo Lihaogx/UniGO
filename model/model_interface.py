@@ -12,24 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import inspect
 import torch
-import importlib
-from torch.nn import functional as F
-import torch.optim.lr_scheduler as lrs
 
 import pytorch_lightning as pl
-import sys
-sys.path.append('./UniGO/')
 from utils import create_optimizer, create_scheduler
-from model.network.gnn import FlexibleGNN
 from model.network.unigo import UniGONet
 from model.network.unigo_gnn import UniGONet_GNN
 from model.network.unigo_sage import UniGONet_Sage
 from model.network.unigo_reduce import UniGONet_ReduceV2
 from model.network.unigo_pooling import UniGONet_PoolingV2
 from model.metric.ODMetrics import ODMetrics
-model = {'gnn':FlexibleGNN, 'unigo':UniGONet, 'unigo_gnn':UniGONet_GNN, 'unigo_sage':UniGONet_Sage, "unigo_reduce": UniGONet_ReduceV2, 'unigo_pooling': UniGONet_PoolingV2}
+model = {'unigo':UniGONet, 'unigo_gnn':UniGONet_GNN, 'unigo_sage':UniGONet_Sage, "unigo_reduce": UniGONet_ReduceV2, 'unigo_pooling': UniGONet_PoolingV2}
 
 
 class MInterface(pl.LightningModule):
@@ -46,7 +39,7 @@ class MInterface(pl.LightningModule):
         return self.model(batch)
 
     def training_step(self, batch, batch_idx):
-        if self.args.model.other_loss:
+        if getattr(self.args.model, 'other_loss', False):
             pred, target, *args = self(batch)
             loss = self.model.loss(pred, target, *args)
         else:
@@ -56,7 +49,7 @@ class MInterface(pl.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        if self.args.model.other_loss:
+        if getattr(self.args.model, 'other_loss', False):
             pred, target, *args = self(batch)
             loss = self.model.loss(pred, target, *args)
         else:
@@ -68,7 +61,7 @@ class MInterface(pl.LightningModule):
         return loss
 
     def test_step(self, batch, batch_idx):
-        if self.args.model.other_loss:
+        if getattr(self.args.model, 'other_loss', False):
             pred, target, *args = self(batch)
             loss = self.model.loss(pred, target, *args)
         else:
@@ -82,7 +75,7 @@ class MInterface(pl.LightningModule):
 
     def on_validation_epoch_end(self):
         results = self.val_metric.compute()
-        if torch.isnan(results['wasserstein_distance']).any():
+        if torch.isnan(results['wasserstein_distance']).item():
             raise ValueError(f"NaN detected in results['wasserstein_distance']")
         self.log_dict({'val_wasserstein_distance': results['wasserstein_distance'], 
                        'val_mse': results['mse'], 
@@ -103,6 +96,8 @@ class MInterface(pl.LightningModule):
     def configure_optimizers(self):
         optimizer = create_optimizer(self.model.parameters(), self.optim)
         scheduler = create_scheduler(optimizer, self.optim)
+        if scheduler is None:
+            return optimizer
         return [optimizer], [scheduler]
     
 

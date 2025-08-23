@@ -48,8 +48,11 @@ base_config = {
     'horizon': 5,  # Length of y time steps
 }
 # Add project root directory to system path
-sys.path.append('./UniGO/')
-from utils import load_config
+try:
+    from utils import load_config  # noqa: F401
+except Exception:
+    # Fallback import path without modifying sys.path
+    from ..utils import load_config  # type: ignore
 
 def create_graph_with_opinions(n, graph_type='ba', m=2, p=0.1, k=4, seed=None):
     """
